@@ -21,6 +21,22 @@ func (z *ZeroReader) Read(p []byte) (int, error) {
 
 }
 
+
+type PageHeaderData struct
+{
+	/* XXX LSN is member of *any* block, not only page-organized ones */
+	pd_lsn uint64		/* LSN: next byte after last byte of xlog
+								 * record for last change to this page */
+	pd_checksum uint16	/* checksum */
+	pd_flags uint16		/* flag bits, see below */
+	pd_lower uint16		/* offset to start of free space */
+	pd_upper uint16		/* offset to end of free space */
+	pd_special uint16	/* offset to start of special space */
+	pd_pagesize_version uint16
+	pd_prune_xid uint32 /* oldest prunable XID, or zero if none */
+}
+
+
 // TarWalker walks files provided by the passed in directory
 // and creates compressed tar members labeled as `part_00i.tar.lzo`.
 //
