@@ -43,7 +43,7 @@ func (crypter *Crypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
 		crypter.pubKey = entitylist
 	}
 
-	var wc, err0 = openpgp.Encrypt(writer,crypter.pubKey,nil,nil,nil)
+	var wc, err0 = openpgp.Encrypt(writer, crypter.pubKey, nil, nil, nil)
 	if err0 != nil {
 		return nil, err0;
 	}
@@ -52,7 +52,7 @@ func (crypter *Crypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
 }
 
 func (crypter *Crypter) Decrypt() (error) {
-	if crypter.pubKey == nil {
+	if crypter.secretKey == nil {
 		armour, err := GetSecretRingArmour(crypter.keyRingId)
 		if err != nil {
 			return err;
@@ -62,7 +62,7 @@ func (crypter *Crypter) Decrypt() (error) {
 		if err != nil {
 			return err
 		}
-		crypter.pubKey = entitylist
+		crypter.secretKey = entitylist
 	}
 
 	return nil

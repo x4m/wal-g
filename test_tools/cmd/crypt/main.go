@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/wal-g/wal-g"
+	"os"
 )
 
 type ZeroWriter struct {
@@ -30,7 +31,8 @@ func main() {
 	fmt.Printf("Secret armour: %v\n", string(armour))
 
 	var c walg.Crypter
-	err = c.Encrypt(nil)
+	file, _ := os.Create("temp.txt")
+	_,err = c.Encrypt(file)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
