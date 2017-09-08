@@ -51,21 +51,26 @@ func (crypter *Crypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
 	return wc, nil
 }
 
-func (crypter *Crypter) Decrypt() (error) {
+func (crypter *Crypter) Decrypt(reader io.ReadCloser) (io.Reader, error) {
 	if crypter.secretKey == nil {
 		armour, err := GetSecretRingArmour(crypter.keyRingId)
 		if err != nil {
-			return err;
+			return nil, err;
 		}
 
 		entitylist, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(armour))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		crypter.secretKey = entitylist
 	}
 
-	return nil
+	var md, err0 = openpgp.ReadMessage(reader, crypter.secretKey, nil, nil)
+	if err0 != nil {
+		return nil, err0;
+	}
+
+	return md.UnverifiedBody, nil
 }
 
 func GetKeyRingId() string {
