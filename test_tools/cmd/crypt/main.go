@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/wal-g/wal-g"
 	"os"
+	"io"
 )
 
 type ZeroWriter struct {
@@ -31,14 +32,27 @@ func main() {
 	fmt.Printf("Secret armour: %v\n", string(armour))
 
 	var c walg.Crypter
-	file, _ := os.Create("temp.txt")
-	_,err = c.Encrypt(file)
+	wfile, _ := os.Create("temp.txt")
+	var writer io.WriteCloser
+	writer,err = c.Encrypt(wfile)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 
-	err = c.Decrypt()
+	writer.Write([]byte{0,1,2,7})
+
+	writer.Close()
+
+	rfile, _ := os.Open("temp.txt")
+	var reader io.Reader
+	reader,err = c.Decrypt(rfile)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+
+	bytes:= make([]byte,8)
+
+	n, _ := reader.Read(bytes)
+
+	fmt.Printf("Decrypted %v bytes %v",n, bytes)
 }

@@ -77,7 +77,7 @@ func GetKeyRingId() string {
 	return os.Getenv("WALE_GPG_KEY_ID")
 }
 
-const gpgBin = "/usr/local/bin/gpg"
+const gpgBin = "gpg"
 
 func GetPubRingArmour(keyId string) ([]byte, error) {
 	out, err := exec.Command(gpgBin, "-a", "--export", "-r", "\""+keyId+"\"").Output()
