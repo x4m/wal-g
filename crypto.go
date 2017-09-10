@@ -43,12 +43,45 @@ func (crypter *Crypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
 		crypter.pubKey = entitylist
 	}
 
-	var wc, err0 = openpgp.Encrypt(writer, crypter.pubKey, nil, nil, nil)
-	if err0 != nil {
-		return nil, err0;
+	return &DelayWriteCloser{writer, crypter.pubKey, nil}, nil
+}
+
+// Encryption starts writing header immidiately.
+// But there is a lot of places where wrriter is instanciated long before pipe
+// is ready. This is why here is used special writer, which delays encryption
+// initialization before actual write. If no write occurs, initialization
+// still is performed, to handle zero-byte files correctly
+type DelayWriteCloser struct {
+	inner io.WriteCloser
+	el    openpgp.EntityList
+	outer *io.WriteCloser
+}
+
+func (d *DelayWriteCloser) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if d.outer == nil {
+		wc, err0 := openpgp.Encrypt(d.inner, d.el, nil, nil, nil)
+		if err0 != nil {
+			return 0, err
+		}
+		d.outer = &wc
+	}
+	n, err = (*d.outer).Write(p)
+	return
+}
+
+func (d *DelayWriteCloser) Close() error {
+	if d.outer == nil {
+		wc, err0 := openpgp.Encrypt(d.inner, d.el, nil, nil, nil)
+		if err0 != nil {
+			return err0
+		}
+		d.outer = &wc
 	}
 
-	return wc, nil
+	return (*d.outer).Close()
 }
 
 func (crypter *Crypter) Decrypt(reader io.ReadCloser) (io.Reader, error) {

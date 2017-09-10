@@ -67,15 +67,18 @@ nWM=
 -----END PGP PRIVATE KEY BLOCK-----
 `
 
-func MockTestCrypter() (*Crypter){
+func MockArmedCrypter() (*Crypter) {
 	ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(pgpTestPrivateKey))
 	if err != nil {
 		panic(err)
 	}
-	return &Crypter{armed:true,configured:true,pubKey:ring,secretKey:ring}
+	return &Crypter{armed: true, configured: true, pubKey: ring, secretKey: ring}
 }
 
+func MockDisarmedCrypter() (*Crypter) {
+	return &Crypter{armed: false, configured: true, pubKey: nil, secretKey: nil}
+}
 
 func TestMockCrypter(t *testing.T) {
-	MockTestCrypter()
+	MockArmedCrypter()
 }

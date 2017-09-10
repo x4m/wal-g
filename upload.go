@@ -165,6 +165,8 @@ func (tu *TarUploader) upload(input *s3manager.UploadInput, path string) (err er
 				break
 			}
 
+			//TODO: Handle "no such bucket error"
+
 			if multierr, ok := e.(s3manager.MultiUploadFailure); ok {
 				log.Printf("upload: failed to upload '%s' with UploadID '%s'. Restarting in %0.2f seconds", path, multierr.UploadID(), et.wait)
 			} else {
@@ -217,10 +219,8 @@ func (s *S3TarBall) StartUpload(name string, crypter *Crypter) io.WriteCloser {
 
 	}()
 
-	var wc io.WriteCloser = pw
 	if crypter.IsUsed() {
-		var err error
-		wc, err = crypter.Encrypt(pw)
+		wc, err := crypter.Encrypt(pw)
 
 		if err != nil {
 			panic(err)
@@ -229,7 +229,7 @@ func (s *S3TarBall) StartUpload(name string, crypter *Crypter) io.WriteCloser {
 		return &Lz4CascadeClose2{lz4.NewWriter(wc), wc, pw}
 	}
 
-	return &Lz4CascadeClose{lz4.NewWriter(wc), wc}
+	return &Lz4CascadeClose{lz4.NewWriter(pw), pw}
 }
 
 // UploadWal compresses a WAL file using LZ4 and uploads to S3. Returns

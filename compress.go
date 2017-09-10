@@ -65,21 +65,22 @@ func (p *LzPipeWriter) Compress(crypter *Crypter) {
 	pr, pw := io.Pipe()
 	p.Output = pr
 
+	var wc io.WriteCloser = pw
+	if crypter.IsUsed() {
+		var err error
+		wc, err = crypter.Encrypt(pw)
+
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	w := &EmptyWriteIgnorer{wc}
+	lzw := lz4.NewWriter(w)
 
 	go func() {
 
-		var wc io.WriteCloser = pw
-		if crypter.IsUsed() {
-			var err error
-			wc, err = crypter.Encrypt(pw)
 
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		w := &EmptyWriteIgnorer{wc}
-		lzw := lz4.NewWriter(w)
 
 		_, err := lzw.ReadFrom(p.Input)
 
