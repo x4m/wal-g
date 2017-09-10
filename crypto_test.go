@@ -89,11 +89,12 @@ func TestMockCrypter(t *testing.T) {
 type ClosingBuffer struct {
 	*bytes.Buffer
 }
+
 func (cb *ClosingBuffer) Close() (err error) {
 	return nil
 }
 
-func TestEncryptionCycle(t *testing.T){
+func TestEncryptionCycle(t *testing.T) {
 	crypter := MockArmedCrypter()
 	const somesecret = "so very secret thingy"
 

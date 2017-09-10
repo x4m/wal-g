@@ -202,7 +202,6 @@ func (s *S3TarBall) StartUpload(name string, crypter *Crypter) io.WriteCloser {
 
 	fmt.Printf("Starting part %d ...\n", s.number)
 
-
 	tupl.wg.Add(1)
 	go func() {
 		defer tupl.wg.Done()

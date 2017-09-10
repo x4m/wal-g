@@ -128,7 +128,7 @@ func TestS3DependentFunctions(t *testing.T) {
 	// Test naming property of SetUp().
 	bundle.NewTarBall()
 	tarBall = bundle.Tb
-	tarBall.SetUp(walg.MockArmedCrypter(),"mockTarball")
+	tarBall.SetUp(walg.MockArmedCrypter(), "mockTarball")
 	tarBall.CloseTar()
 	err = tarBall.Finish()
 	if err != nil {

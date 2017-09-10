@@ -79,9 +79,6 @@ func (p *LzPipeWriter) Compress(crypter *Crypter) {
 	lzw := lz4.NewWriter(w)
 
 	go func() {
-
-
-
 		_, err := lzw.ReadFrom(p.Input)
 
 		if err != nil {

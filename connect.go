@@ -32,6 +32,9 @@ func Connect() (*pgx.Conn, error) {
 func StartBackup(conn *pgx.Conn, backup string) (string, error) {
 	var name string
 	err := conn.QueryRow("SELECT file_name FROM pg_walfile_name_offset(pg_start_backup($1, true, false))", backup).Scan(&name)
+	//err := conn.QueryRow("SELECT file_name FROM pg_xlogfile_name_offset(pg_start_backup($1, true, false))", backup).Scan(&name)
+	//TODO: add Postgres10 switch here
+
 	if err != nil {
 		return "", errors.Wrap(err, "QueryFile: start backup failed")
 	}
