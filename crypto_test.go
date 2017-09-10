@@ -4,6 +4,8 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"strings"
 	"testing"
+	"bytes"
+	"io/ioutil"
 )
 
 const pgpTestPrivateKey string = `
@@ -81,4 +83,40 @@ func MockDisarmedCrypter() (*Crypter) {
 
 func TestMockCrypter(t *testing.T) {
 	MockArmedCrypter()
+	MockDisarmedCrypter()
+}
+
+type ClosingBuffer struct {
+	*bytes.Buffer
+}
+func (cb *ClosingBuffer) Close() (err error) {
+	return nil
+}
+
+func TestEncryptionCycle(t *testing.T){
+	crypter := MockArmedCrypter()
+	const somesecret = "so very secret thingy"
+
+	buf := new(bytes.Buffer)
+	encrypt, err := crypter.Encrypt(&ClosingBuffer{buf})
+	if err != nil {
+		t.Errorf("Encryption error: %v", err)
+	}
+
+	encrypt.Write([]byte(somesecret))
+	encrypt.Close()
+
+	decrypt, err := crypter.Decrypt(&ClosingBuffer{buf})
+	if err != nil {
+		t.Errorf("Decryption error: %v", err)
+	}
+
+	decryptedBytes, err := ioutil.ReadAll(decrypt)
+	if err != nil {
+		t.Errorf("Decryption read error: %v", err)
+	}
+
+	if string(decryptedBytes) != somesecret {
+		t.Errorf("Decrypted text not equals open text")
+	}
 }

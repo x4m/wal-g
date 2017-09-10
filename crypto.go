@@ -46,8 +46,8 @@ func (crypter *Crypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
 	return &DelayWriteCloser{writer, crypter.pubKey, nil}, nil
 }
 
-// Encryption starts writing header immidiately.
-// But there is a lot of places where wrriter is instanciated long before pipe
+// Encryption starts writing header immediately.
+// But there is a lot of places where writer is instantiated long before pipe
 // is ready. This is why here is used special writer, which delays encryption
 // initialization before actual write. If no write occurs, initialization
 // still is performed, to handle zero-byte files correctly
@@ -112,11 +112,14 @@ func GetKeyRingId() string {
 
 const gpgBin = "gpg"
 
+// Here we read armoured version of Key by calling GPG process
 func GetPubRingArmour(keyId string) ([]byte, error) {
 	out, err := exec.Command(gpgBin, "-a", "--export", "-r", "\""+keyId+"\"").Output()
 	if err != nil {
 		return nil, err
 	}
+
+	//TODO: Cache pubkey in a file
 	return out, nil
 }
 
