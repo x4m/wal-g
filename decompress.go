@@ -142,3 +142,8 @@ func DecompressLz4(d io.Writer, s io.Reader) error {
 	}
 	return nil
 }
+
+type ReadCascadeClose struct {
+	io.Reader
+	io.Closer
+}
