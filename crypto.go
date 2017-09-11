@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"bytes"
 	"io"
+	"io/ioutil"
+	"encoding/json"
+	"os/user"
 )
 
 type Crypter struct {
@@ -112,14 +115,43 @@ func GetKeyRingId() string {
 
 const gpgBin = "gpg"
 
+type CachedKey struct {
+	KeyId string `json:"keyId"`
+	Body  []byte `json:"body"`
+}
+
 // Here we read armoured version of Key by calling GPG process
 func GetPubRingArmour(keyId string) ([]byte, error) {
+	var cache CachedKey
+	var cacheFilename string
+
+	usr, err := user.Current()
+	if err == nil {
+
+		cacheFilename = usr.HomeDir+"/.walg_key_cache"
+
+		file, err := ioutil.ReadFile(cacheFilename)
+		// here we ignore whatever error can occur
+		if err == nil {
+			json.Unmarshal(file, &cache)
+			if cache.KeyId == keyId {
+				return cache.Body, nil
+			}
+		}
+	}
+
 	out, err := exec.Command(gpgBin, "-a", "--export", "-r", "\""+keyId+"\"").Output()
 	if err != nil {
 		return nil, err
 	}
 
-	//TODO: Cache pubkey in a file
+	cache.KeyId = keyId
+	cache.Body = out
+	marshal, err := json.Marshal(&cache)
+	if err == nil && len(cacheFilename) > 0 {
+		ioutil.WriteFile(cacheFilename, marshal, 0644)
+	}
+
 	return out, nil
 }
 
