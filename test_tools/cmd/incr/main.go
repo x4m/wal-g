@@ -2,9 +2,12 @@ package main
 
 import (
 	"github.com/wal-g/wal-g"
-	"path/filepath"
 	"os"
 	"fmt"
+	"io/ioutil"
+	"io"
+	"bytes"
+	"log"
 )
 
 func walkfunc(path string, info os.FileInfo, err error) error {
@@ -36,5 +39,90 @@ func walkfunc(path string, info os.FileInfo, err error) error {
 }
 
 func main() {
-	filepath.Walk("/Users/x4mmm/DemoDb/base/", walkfunc)
+	//filepath.Walk("/Users/x4mmm/DemoDb/base/", walkfunc)
+	fileName := "/Users/x4mmm/DemoDb/base/63061/63077"
+	file, _ := os.Stat(fileName)
+	reader, isPaged, err := walg.ReadDatabaseFile(fileName, 0xbf2fa15800000000)
+	if err != nil {
+		fmt.Print(err.Error())
+	}
+	buf, _ := ioutil.ReadAll(reader)
+	fmt.Printf("IsPaged %v\n", isPaged)
+	fmt.Printf("Increment size = %v\n", (len(buf)))
+	fmt.Printf("Filesize = %v\n", (file.Size()))
+
+	tmpFileName := fileName + "_tmp"
+	CopyFile(fileName, tmpFileName)
+
+	tmpFile, _ := os.OpenFile(tmpFileName, os.O_RDWR, 0666)
+	tmpFile.WriteAt(make([]byte,12345),477421568-12345)
+	tmpFile.Close()
+
+	err = walg.ApplyFileIncrement(tmpFileName, bytes.NewReader(buf))
+	if err != nil {
+		fmt.Print(err.Error())
+	}
+
+	compare := deepCompare(fileName, tmpFileName)
+	fmt.Printf("Compare result %v",compare)
+
+	os.Remove(tmpFileName)
+}
+
+func CopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+const chunkSize = 64000
+
+func deepCompare(file1, file2 string) bool {
+	// Check file size ...
+
+	f1, err := os.Open(file1)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	f2, err := os.Open(file2)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for {
+		b1 := make([]byte, chunkSize)
+		_, err1 := f1.Read(b1)
+
+		b2 := make([]byte, chunkSize)
+		_, err2 := f2.Read(b2)
+
+		if err1 != nil || err2 != nil {
+			if err1 == io.EOF && err2 == io.EOF {
+				return true
+			} else if err1 == io.EOF || err2 == io.EOF {
+				return false
+			} else {
+				log.Fatal(err1, err2)
+			}
+		}
+
+		if !bytes.Equal(b1, b2) {
+			return false
+		}
+	}
 }
