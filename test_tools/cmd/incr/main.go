@@ -40,9 +40,9 @@ func walkfunc(path string, info os.FileInfo, err error) error {
 
 func main() {
 	//filepath.Walk("/Users/x4mmm/DemoDb/base/", walkfunc)
-	fileName := "/Users/x4mmm/DemoDb/base/63061/63077"
+	fileName := "testdata/paged_file.bin"
 	file, _ := os.Stat(fileName)
-	reader, isPaged, err := walg.ReadDatabaseFile(fileName, 0xbf2fa15800000000)
+	reader, isPaged, err := walg.ReadDatabaseFile(fileName, 0xc6bd460000000000)
 	if err != nil {
 		fmt.Print(err.Error())
 	}
@@ -55,7 +55,7 @@ func main() {
 	CopyFile(fileName, tmpFileName)
 
 	tmpFile, _ := os.OpenFile(tmpFileName, os.O_RDWR, 0666)
-	tmpFile.WriteAt(make([]byte,12345),477421568-12345)
+	tmpFile.WriteAt(make([]byte, 12345), file.Size()-12345)
 	tmpFile.Close()
 
 	err = walg.ApplyFileIncrement(tmpFileName, bytes.NewReader(buf))
@@ -64,7 +64,7 @@ func main() {
 	}
 
 	compare := deepCompare(fileName, tmpFileName)
-	fmt.Printf("Compare result %v",compare)
+	fmt.Printf("Compare result %v", compare)
 
 	os.Remove(tmpFileName)
 }
