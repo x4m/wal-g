@@ -21,7 +21,6 @@ func (z *ZeroReader) Read(p []byte) (int, error) {
 
 }
 
-
 // TarWalker walks files provided by the passed in directory
 // and creates compressed tar members labeled as `part_00i.tar.lzo`.
 //
@@ -51,6 +50,7 @@ func (bundle *Bundle) TarWalker(path string, info os.FileInfo, err error) error 
 		}
 
 		bundle.NewTarBall()
+
 		err = HandleTar(bundle, path, info)
 		if err == filepath.SkipDir {
 			return err
@@ -87,21 +87,25 @@ func HandleTar(bundle TarBundle, path string, info os.FileInfo) error {
 			return errors.Wrap(err, "HandleTar: failed to write header")
 		}
 		if info.Mode().IsRegular() {
-			f, err := os.Open(path)
+			f, isPaged, err := ReadDatabaseFile(path, bundle.GetLsn())
 			if err != nil {
 				return errors.Wrapf(err, "HandleTar: failed to open file '%s'\n", path)
 			}
+			if isPaged {
+				tarBall.AppendIncrementalFile(path)
+			}
 			lim := &io.LimitedReader{
-				R: io.MultiReader(f, &ZeroReader{}),
+				R: f,
 				N: int64(hdr.Size),
 			}
 
-			_, err = io.Copy(tarWriter, lim)
+			size, err := io.Copy(tarWriter, lim)
 			if err != nil {
 				return errors.Wrap(err, "HandleTar: copy failed")
 			}
 
-			tarBall.SetSize(hdr.Size)
+			hdr.Size = size
+			tarBall.SetSize(size)
 			f.Close()
 		}
 	} else if ok && info.Mode().IsDir() {

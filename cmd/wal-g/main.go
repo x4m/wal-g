@@ -12,6 +12,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/wal-g/wal-g"
+	"encoding/json"
+	"io/ioutil"
 )
 
 var profile bool
@@ -277,7 +279,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("%+v\n", err)
 		}
-		n, err := walg.StartBackup(conn, time.Now().String())
+		n, _, err := walg.StartBackup(conn, time.Now().String())
 		if err != nil {
 			log.Fatalf("%+v\n", err)
 		}
@@ -318,8 +320,93 @@ func main() {
 		if err != nil {
 			log.Fatalf("%+v\n", err)
 		}
+	} else if command == "backup-push-incr" {
+		handleIncrementalBackup(dirArc, tu, pre)
 	} else {
 		l.Fatalf("Command '%s' is unsupported by WAL-G.", command)
 	}
 
+}
+func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Prefix) {
+	var bk = &walg.Backup{
+		Prefix: pre,
+		Path:   aws.String(*pre.Server + "/basebackups_005/"),
+	}
+
+	var dto walg.S3TarBallSentinelDto
+	latest, err := bk.GetLatest()
+	if err != walg.LatestNotFound {
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+		latest += "_backup_stop_sentinel.json"
+
+		previosBackupReader := walg.S3ReaderMaker{
+			Backup:     bk,
+			Key:        aws.String(*pre.Server + "/basebackups_005/" + latest),
+			FileFormat: walg.CheckType(latest),
+		}
+
+		prevBackup, err := previosBackupReader.Reader()
+
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+		sentinelDto, err := ioutil.ReadAll(prevBackup)
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+		err = json.Unmarshal(sentinelDto, &dto)
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+	}
+
+	// Connect to postgres and start/finish a nonexclusive backup.
+	bundle := &walg.Bundle{
+		MinSize:          int64(1000000000), //MINSIZE = 1GB
+		IncrementFromLsn: dto.LSN,
+	}
+	conn, err := walg.Connect()
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	n, lsn, err := walg.StartBackup(conn, time.Now().String())
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	// Start a new tar bundle and walk the DIRARC directory and upload to S3.
+	bundle.Tbm = &walg.S3TarBallMaker{
+		BaseDir:          filepath.Base(dirArc),
+		Trim:             dirArc,
+		BkupName:         n,
+		Tu:               tu,
+		Lsn:              &lsn,
+		IncrementFromLsn: dto.LSN,
+	}
+	bundle.NewTarBall()
+	fmt.Println("Walking ...")
+	err = filepath.Walk(dirArc, bundle.TarWalker)
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	err = bundle.Tb.CloseTar()
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	// Upload `pg_control`.
+	err = bundle.HandleSentinel()
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	// Stops backup and write/upload postgres `backup_label` and `tablespace_map` files
+	err = bundle.HandleLabelFiles(conn)
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	// Wait for all uploads to finish.
+	err = bundle.Tb.Finish()
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
 }

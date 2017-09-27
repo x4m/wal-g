@@ -5,6 +5,8 @@ import (
 
 	"github.com/jackc/pgx"
 	"github.com/pkg/errors"
+	"strings"
+	"strconv"
 )
 
 // Connect establishes a connection to postgres using
@@ -29,13 +31,35 @@ func Connect() (*pgx.Conn, error) {
 // `backup_label` and `tablespace_map` contents are not immediately written to
 // a file but returned instead. Returns empty string and an error if backup
 // fails.
-func StartBackup(conn *pgx.Conn, backup string) (string, error) {
-	var name string
-	err := conn.QueryRow("SELECT file_name FROM pg_xlogfile_name_offset(pg_start_backup($1, true, false))", backup).Scan(&name)
+func StartBackup(conn *pgx.Conn, backup string) (string, uint64, error) {
+	var name, lsnStr string
+	var lsn uint64
+	var version int
+	// We extract here version since it is not used elsewhere. If reused, this should be refactored.
+	err := conn.QueryRow("select (current_setting('server_version_num'))::int").Scan(&version)
 	if err != nil {
-		return "", errors.Wrap(err, "QueryFile: start backup failed")
+		return "", lsn, errors.Wrap(err, "QueryFile: getting Postgres version failed")
 	}
-	return "base_" + name, nil
+	walname := "xlog"
+	if version >= 100000 {
+		walname = "wal"
+	}
+
+	err = conn.QueryRow("SELECT (pg_"+walname+"file_name_offset(lsn)).file_name, lsn::text FROM pg_start_backup($1, true, false) lsn", backup).Scan(&name, &lsnStr)
+	if err != nil {
+		return "", lsn, errors.Wrap(err, "QueryFile: start backup failed")
+	}
+	lsnArray := strings.SplitN(lsnStr, "/", 2)
+
+	highLsn, err := strconv.ParseUint(lsnArray[0], 16, 32)
+	lowLsn, err2 := strconv.ParseUint(lsnArray[1], 16, 32)
+	if err != nil || err2 !=nil {
+		return "", lsn, errors.Wrap(err, "QueryFile: unable to parse LSN "+lsnStr)
+	}
+
+	lsn = highLsn<<32 + lowLsn
+
+	return "base_" + name, lsn, nil
 }
 
 // FormatName grabs the name of the WAL file and returns it in the form of `base_...`.

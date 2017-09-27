@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	pagedFileName = "testdata/paged_file.bin"
-	sampeLSN      = 0xc6bd460000000000
+	pagedFileName        = "testdata/paged_file.bin"
+	sampeLSN      uint64 = 0xc6bd460000000000
 )
 
 func TestCheckType(t *testing.T) {
-	reader, isPaged, err := ReadDatabaseFile(pagedFileName, sampeLSN)
+	reader, isPaged, err := ReadDatabaseFile(pagedFileName, &sampeLSN)
 	file, _ := os.Stat(pagedFileName)
 	if err != nil {
 		fmt.Print(err.Error())

@@ -42,7 +42,8 @@ func main() {
 	//filepath.Walk("/Users/x4mmm/DemoDb/base/", walkfunc)
 	fileName := "testdata/paged_file.bin"
 	file, _ := os.Stat(fileName)
-	reader, isPaged, err := walg.ReadDatabaseFile(fileName, 0xc6bd460000000000)
+	var lsn uint64 = 0xc6bd460000000000
+	reader, isPaged, err := walg.ReadDatabaseFile(fileName, &lsn)
 	if err != nil {
 		fmt.Print(err.Error())
 	}

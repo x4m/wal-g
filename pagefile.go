@@ -185,7 +185,7 @@ func (pr *IncrementalPageReader) Initialize() {
 	pr.backlog <- fileSizeBytes
 }
 
-func ReadDatabaseFile(fileName string, lsn uint64) (io.ReadCloser, bool, error) {
+func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, error) {
 	info, err := os.Stat(fileName)
 	if err != nil {
 		return nil, false, err
@@ -196,7 +196,7 @@ func ReadDatabaseFile(fileName string, lsn uint64) (io.ReadCloser, bool, error) 
 		return nil, false, err
 	}
 
-	if !IsPagedFile(info) {
+	if lsn==nil || !IsPagedFile(info) {
 		return file, false, nil
 	}
 
@@ -205,7 +205,7 @@ func ReadDatabaseFile(fileName string, lsn uint64) (io.ReadCloser, bool, error) 
 		N: int64(info.Size()),
 	}
 
-	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, info, lsn, nil, -1, false}
+	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, info, *lsn, nil, -1, false}
 	reader.Initialize()
 	return reader, true, nil
 }
