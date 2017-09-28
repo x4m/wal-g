@@ -95,7 +95,7 @@ func HandleTar(bundle TarBundle, path string, info os.FileInfo) error {
 				tarBall.AppendIncrementalFile(path)
 			}
 			lim := &io.LimitedReader{
-				R: f,
+				R: io.MultiReader(f, &ZeroReader{}),
 				N: int64(hdr.Size),
 			}
 

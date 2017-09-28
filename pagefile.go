@@ -4,7 +4,8 @@ package walg
 #include <inttypes.h>
 typedef struct PageHeaderData
 {
-	uint64_t 		pd_lsn;
+	uint32_t 		pd_lsn_h;
+	uint32_t 		pd_lsn_l;
 
 	uint16_t		pd_checksum;
 	uint16_t		pd_flags;
@@ -32,19 +33,20 @@ PageProbeResult GetLSNIfPageIsValid(void* ptr)
 	PageHeaderData* data = (PageHeaderData*) ptr;
 	PageProbeResult result = {0 , invalid_lsn};
 
+	result.lsn = (((uint64_t)data->pd_lsn_h) << 32) + ((uint64_t)data->pd_lsn_l);
+
 	if ((data->pd_flags & valid_flags) != data->pd_flags ||
 		data->pd_lower < header_size ||
 		data->pd_lower > data->pd_upper ||
 		data->pd_upper > data->pd_special ||
 		data->pd_special > block_size ||
-		data->pd_lsn == invalid_lsn ||
+		(result.lsn == invalid_lsn)||
 		data->pd_pagesize_version != block_size + layout_version)
 	{
 		return result;
 	}
 
 	result.success = 1;
-	result.lsn = ((PageHeaderData*) data)->pd_lsn;
 	return result;
 }
 */
@@ -102,6 +104,7 @@ type IncrementalPageReader struct {
 	next               *[]byte
 	currentBlockNumber int32
 	EOFed              bool
+	dumpedPagesCount   uint32
 }
 
 func (pr *IncrementalPageReader) Read(p []byte) (n int, err error) {
@@ -151,6 +154,8 @@ func (pr *IncrementalPageReader) AdvanceFileReader() error {
 		if err == io.EOF {
 			pr.EOFed = true
 
+			//fmt.Printf("EOFed, dumped pages count %v total pages %v \n", pr.dumpedPagesCount, pr.currentBlockNumber)
+
 			//At the end of a increment we place sentinel to ensure consistency
 			blockNumberBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(blockNumberBytes, math.MaxUint32)
@@ -163,6 +168,7 @@ func (pr *IncrementalPageReader) AdvanceFileReader() error {
 			if (!valid) || (lsn >= pr.lsn) {
 				blockNumberBytes := make([]byte, 4)
 				binary.BigEndian.PutUint32(blockNumberBytes, uint32(pr.currentBlockNumber))
+				pr.dumpedPagesCount++;
 				pr.backlog <- blockNumberBytes
 				pr.backlog <- pageBytes
 				break;
@@ -196,16 +202,16 @@ func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, error)
 		return nil, false, err
 	}
 
-	if lsn==nil || !IsPagedFile(info) {
+	if lsn == nil || !IsPagedFile(info) {
 		return file, false, nil
 	}
 
 	lim := &io.LimitedReader{
-		R: file,
+		R: io.MultiReader(file, &ZeroReader{}),
 		N: int64(info.Size()),
 	}
 
-	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, info, *lsn, nil, -1, false}
+	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, info, *lsn, nil, -1, false, 0}
 	reader.Initialize()
 	return reader, true, nil
 }

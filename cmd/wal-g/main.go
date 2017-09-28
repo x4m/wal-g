@@ -322,10 +322,121 @@ func main() {
 		}
 	} else if command == "backup-push-incr" {
 		handleIncrementalBackup(dirArc, tu, pre)
+	} else if command == "backup-fetch-incr" {
+		handleIncrementalFetch(backupName, pre, dirArc)
 	} else {
 		l.Fatalf("Command '%s' is unsupported by WAL-G.", command)
 	}
 
+}
+func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) {
+	var allKeys []string
+	var keys []string
+	var bk *walg.Backup
+	// Check if BACKUPNAME exists and if it does extract to DIRARC.
+	if backupName != "LATEST" {
+		bk = &walg.Backup{
+			Prefix: pre,
+			Path:   aws.String(*pre.Server + "/basebackups_005/"),
+			Name:   aws.String(backupName),
+		}
+		bk.Js = aws.String(*bk.Path + *bk.Name + "_backup_stop_sentinel.json")
+
+		exists, err := bk.CheckExistence()
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+		if exists {
+			allKeys, err := bk.GetKeys()
+			if err != nil {
+				log.Fatalf("%+v\n", err)
+			}
+			keys = allKeys[:len(allKeys)-1]
+
+		} else {
+			log.Fatalf("Backup '%s' does not exist.\n", *bk.Name)
+		}
+
+		// Find the LATEST valid backup (checks against JSON file and grabs backup name) and extract to DIRARC.
+	} else if backupName == "LATEST" {
+		bk = &walg.Backup{
+			Prefix: pre,
+			Path:   aws.String(*pre.Server + "/basebackups_005/"),
+		}
+
+		latest, err := bk.GetLatest()
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+		bk.Name = aws.String(latest)
+		allKeys, err = bk.GetKeys()
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+		keys = allKeys[:len(allKeys)-1]
+	}
+	f := &walg.FileTarInterpreter{
+		NewDir: dirArc,
+	}
+	out := make([]walg.ReaderMaker, len(keys))
+	for i, key := range keys {
+		s := &walg.S3ReaderMaker{
+			Backup:     bk,
+			Key:        aws.String(key),
+			FileFormat: walg.CheckType(key),
+		}
+		out[i] = s
+	}
+	// Extract all compressed tar members except `pg_control.tar.lz4` if WALG version backup.
+	err := walg.ExtractAll(f, out)
+	if serr, ok := err.(*walg.UnsupportedFileTypeError); ok {
+		log.Fatalf("%v\n", serr)
+	} else if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	// Check name for backwards compatibility. Will check for `pg_control` if WALG version of backup.
+	re := regexp.MustCompile(`^([^_]+._{1}[^_]+._{1})`)
+	match := re.FindString(*bk.Name)
+	if match == "" {
+		// Extract pg_control last. If pg_control does not exist, program exits with error code 1.
+		name := *bk.Path + *bk.Name + "/tar_partitions/pg_control.tar.lz4"
+		pgControl := &walg.Archive{
+			Prefix:  pre,
+			Archive: aws.String(name),
+		}
+
+		exists, err := pgControl.CheckExistence()
+		if err != nil {
+			log.Fatalf("%+v\n", err)
+		}
+
+		if exists {
+			sentinel := make([]walg.ReaderMaker, 1)
+			sentinel[0] = &walg.S3ReaderMaker{
+				Backup:     bk,
+				Key:        aws.String(name),
+				FileFormat: walg.CheckType(name),
+			}
+			err := walg.ExtractAll(f, sentinel)
+			if serr, ok := err.(*walg.UnsupportedFileTypeError); ok {
+				log.Fatalf("%v\n", serr)
+			} else if err != nil {
+				log.Fatalf("%+v\n", err)
+			}
+			fmt.Printf("\nBackup extraction complete.\n")
+		} else {
+			log.Fatal("Corrupt backup: missing pg_control")
+		}
+	}
+	if mem {
+		f, err := os.Create("mem.prof")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		pprof.WriteHeapProfile(f)
+		defer f.Close()
+	}
 }
 func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Prefix) {
 	var bk = &walg.Backup{
@@ -339,12 +450,12 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 		if err != nil {
 			log.Fatalf("%+v\n", err)
 		}
-		latest += "_backup_stop_sentinel.json"
+		latestSentinel := latest + "_backup_stop_sentinel.json"
 
 		previosBackupReader := walg.S3ReaderMaker{
 			Backup:     bk,
-			Key:        aws.String(*pre.Server + "/basebackups_005/" + latest),
-			FileFormat: walg.CheckType(latest),
+			Key:        aws.String(*pre.Server + "/basebackups_005/" + latestSentinel),
+			FileFormat: walg.CheckType(latestSentinel),
 		}
 
 		prevBackup, err := previosBackupReader.Reader()
@@ -383,6 +494,7 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 		Tu:               tu,
 		Lsn:              &lsn,
 		IncrementFromLsn: dto.LSN,
+		IncrementFrom:    latest,
 	}
 	bundle.NewTarBall()
 	fmt.Println("Walking ...")

@@ -16,6 +16,7 @@ type S3TarBallMaker struct {
 	Tu               *TarUploader
 	Lsn              *uint64
 	IncrementFromLsn *uint64
+	IncrementFrom    string
 }
 
 // Make returns a tarball with required S3 fields.
@@ -30,5 +31,6 @@ func (s *S3TarBallMaker) Make() TarBall {
 		tu:               s.Tu,
 		Lsn:              s.Lsn,
 		IncrementFromLsn: s.IncrementFromLsn,
+		IncrementFrom:    s.IncrementFrom,
 	}
 }

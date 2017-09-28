@@ -65,14 +65,14 @@ type Bundle struct {
 }
 
 func (b *Bundle) GetTarBall() TarBall { return b.Tb }
-func (b *Bundle) NewTarBall()         {
+func (b *Bundle) NewTarBall() {
 	ntb := b.Tbm.Make()
-	if b.Tb!=nil {
+	if b.Tb != nil {
 		ntb.AppendIncrementalFile(b.Tb.GetIncrementalFiles()...)
 	}
 	b.Tb = ntb
 }
-func (b *Bundle) GetLsn() *uint64     { return b.IncrementFromLsn }
+func (b *Bundle) GetLsn() *uint64 { return b.IncrementFromLsn }
 
 // Sentinel is used to signal completion of a walked
 // directory.
@@ -112,6 +112,7 @@ type S3TarBall struct {
 	Lsn              *uint64
 	IncrementFromLsn *uint64
 	IncrementalFiles []string
+	IncrementFrom    string
 }
 
 // SetUp creates a new tar writer and starts upload to S3.
@@ -160,6 +161,7 @@ type S3TarBallSentinelDto struct {
 	LSN              *uint64
 	IncrementFromLSN *uint64   `json:"IncrementFromLSN,omitempty"`
 	IncrementFiles   *[]string `json:"IncrementFiles,omitempty"`
+	IncrementFrom    *string   `json:"IncrementFrom,omitempty"`
 }
 
 // Finish writes an empty .json file and uploads it with the
@@ -170,9 +172,13 @@ type S3TarBallSentinelDto struct {
 func (s *S3TarBall) Finish() error {
 	var err error
 	tupl := s.tu
-	dto := S3TarBallSentinelDto{LSN: s.Lsn, IncrementFromLSN: s.IncrementFromLsn}
+	dto := S3TarBallSentinelDto{
+		LSN:              s.Lsn,
+		IncrementFromLSN: s.IncrementFromLsn,
+	}
 	if s.IncrementFromLsn != nil {
 		dto.IncrementFiles = &s.IncrementalFiles
+		dto.IncrementFrom = &s.IncrementFrom
 	}
 	dtoBody, err := json.Marshal(&dto)
 	if err != nil {
