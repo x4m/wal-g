@@ -16,7 +16,8 @@ const (
 )
 
 func TestCheckType(t *testing.T) {
-	reader, isPaged, err := ReadDatabaseFile(pagedFileName, &sampeLSN)
+	loclLSN := sampeLSN
+	reader, isPaged, err := ReadDatabaseFile(pagedFileName, &loclLSN)
 	file, _ := os.Stat(pagedFileName)
 	if err != nil {
 		fmt.Print(err.Error())
