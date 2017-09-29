@@ -58,7 +58,7 @@ import (
 	"io"
 	"encoding/binary"
 	"errors"
-	"math"
+	"fmt"
 )
 
 const BlockSize uint16 = 8192
@@ -96,15 +96,14 @@ func StaticStructAllignmentCheck() {
 }
 
 type IncrementalPageReader struct {
-	backlog            chan []byte
-	file               io.Reader
-	closer             io.Closer
-	info               os.FileInfo
-	lsn                uint64
-	next               *[]byte
-	currentBlockNumber int32
-	EOFed              bool
-	dumpedPagesCount   uint32
+	backlog chan []byte
+	file    io.Reader
+	seeker  io.Seeker
+	closer  io.Closer
+	info    os.FileInfo
+	lsn     uint64
+	next    *[]byte
+	blocks  []uint32
 }
 
 func (pr *IncrementalPageReader) Read(p []byte) (n int, err error) {
@@ -127,7 +126,7 @@ func (pr *IncrementalPageReader) Read(p []byte) (n int, err error) {
 	return n, err
 }
 func (pr *IncrementalPageReader) DrainMoreData() error {
-	if !pr.EOFed && len(pr.backlog) < 2 {
+	if len(pr.blocks) > 0 && len(pr.backlog) < 2 {
 		err := pr.AdvanceFileReader()
 		if err != nil {
 			return err
@@ -144,51 +143,72 @@ func (pr *IncrementalPageReader) DrainMoreData() error {
 
 func (pr *IncrementalPageReader) AdvanceFileReader() error {
 	pageBytes := make([]byte, BlockSize)
-	for {
-		n, err := io.ReadFull(pr.file, pageBytes)
-		pr.currentBlockNumber++
-		if err == io.ErrUnexpectedEOF || n%int(BlockSize) != 0 {
-			return errors.New("Unexpected EOF during increment scan")
-		}
-
-		if err == io.EOF {
-			pr.EOFed = true
-
-			//fmt.Printf("EOFed, dumped pages count %v total pages %v \n", pr.dumpedPagesCount, pr.currentBlockNumber)
-
-			//At the end of a increment we place sentinel to ensure consistency
-			blockNumberBytes := make([]byte, 4)
-			binary.BigEndian.PutUint32(blockNumberBytes, math.MaxUint32)
-			pr.backlog <- blockNumberBytes
-			return nil
-		}
-
-		if err == nil && n > 0 {
-			lsn, valid := ParsePageHeader(pageBytes)
-			if (!valid) || (lsn >= pr.lsn) {
-				blockNumberBytes := make([]byte, 4)
-				binary.BigEndian.PutUint32(blockNumberBytes, uint32(pr.currentBlockNumber))
-				pr.dumpedPagesCount++;
-				pr.backlog <- blockNumberBytes
-				pr.backlog <- pageBytes
-				break;
-			}
-		} else if err != nil {
-			return err
-		}
-	}
-	return nil
+	blockNo := pr.blocks[0]
+	pr.blocks = pr.blocks[1:]
+	offset := int64(blockNo) * int64(BlockSize)
+	pr.seeker.Seek(offset, 0)
+	_, err := io.ReadFull(pr.file, pageBytes)
+	return err
 }
 
 func (pr *IncrementalPageReader) Close() error {
 	return pr.closer.Close()
 }
 
-func (pr *IncrementalPageReader) Initialize() {
+var InvalidBlock = errors.New("Block is not valid")
+
+func (pr *IncrementalPageReader) Initialize() error {
 	pr.next = &[]byte{0, 1, 1, 0x55}; //format version 0.1, type 1, signature magic number
 	fileSizeBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(fileSizeBytes, uint64(pr.info.Size()))
+	fileSize := pr.info.Size()
+	binary.LittleEndian.PutUint64(fileSizeBytes, uint64(fileSize))
 	pr.backlog <- fileSizeBytes
+
+	pageBytes := make([]byte, BlockSize)
+	pr.blocks = make([]uint32, 0, fileSize/int64(BlockSize))
+
+	for currentBlockNumber := uint32(0); ; currentBlockNumber++ {
+		n, err := io.ReadFull(pr.file, pageBytes)
+		if err == io.ErrUnexpectedEOF || n%int(BlockSize) != 0 {
+			return errors.New("Unexpected EOF during increment scan")
+		}
+
+		if err == io.EOF {
+			len := len(pr.blocks)
+			lenBytes := make([]byte, 4)
+			binary.LittleEndian.PutUint32(lenBytes, uint32(len))
+			pr.backlog <- lenBytes
+
+			diffMap := make([]byte, len*4)
+
+			for index, blockNo := range pr.blocks {
+				binary.LittleEndian.PutUint32(diffMap[index/4:index/4+4], blockNo)
+			}
+
+			pr.backlog <- diffMap
+			pr.seeker.Seek(0, 0)
+			return nil
+		}
+
+		if err == nil {
+			lsn, valid := ParsePageHeader(pageBytes)
+			var allZeroes = false
+			if !valid && allZero(pageBytes) {
+				allZeroes = true
+				valid = true
+			}
+
+			if !valid {
+				return InvalidBlock
+			}
+
+			if (allZeroes) || (lsn >= pr.lsn) {
+				pr.blocks = append(pr.blocks, currentBlockNumber)
+			}
+		} else {
+			return err
+		}
+	}
 }
 
 func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, error) {
@@ -211,26 +231,53 @@ func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, error)
 		N: int64(info.Size()),
 	}
 
-	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, info, *lsn, nil, -1, false, 0}
-	reader.Initialize()
+	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, file, info, *lsn, nil, nil}
+	err = reader.Initialize()
+	if err != nil {
+		if err == InvalidBlock {
+			file.Close()
+			fmt.Printf("File %v as invalid pages, fallback to full backup\n")
+			file, err = os.Open(fileName)
+			if err != nil {
+				return nil, false, err
+			}
+			return file, false, nil
+		} else {
+			return nil, false, err
+		}
+	}
 	return reader, true, nil
 }
 
 func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 	header := make([]byte, 4)
 	fileSizeBytes := make([]byte, 8)
+	lenBytes := make([]byte, 4)
 
-	io.ReadFull(increment, header)
-	io.ReadFull(increment, fileSizeBytes)
+	_, err := io.ReadFull(increment, header)
+	if err != nil {
+		return err
+	}
+	_, err = io.ReadFull(increment, fileSizeBytes)
+	if err != nil {
+		return err
+	}
+	_, err = io.ReadFull(increment, lenBytes)
+	if err != nil {
+		return err
+	}
 
-	fileSize := binary.BigEndian.Uint64(fileSizeBytes)
+	fileSize := binary.LittleEndian.Uint64(fileSizeBytes)
+	len := binary.LittleEndian.Uint32(lenBytes)
+	diffMap := make([]byte, len*4)
 
-	if header[0] != 0 || header[1] != 1 ||
-		header[2] != 1 || header[3] != 0x55 {
-		return errors.New("Inconsistent increment header for " + fileName)
+	_, err = io.ReadFull(increment, diffMap)
+	if err != nil {
+		return err
 	}
 
 	file, err := os.OpenFile(fileName, os.O_RDWR, 0666)
+	defer file.Sync()
 	defer file.Close()
 	if err != nil {
 		return err
@@ -241,35 +288,29 @@ func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 		return err
 	}
 
-	int32Bytes := make([]byte, 4)
 	page := make([]byte, BlockSize)
-	_, err = io.ReadFull(increment, int32Bytes)
-	if err != nil {
-		return err
-	}
-	blockNo := binary.BigEndian.Uint32(int32Bytes)
-
-	for blockNo != math.MaxUint32 {
+	for i := uint32(0); i < len; i++ {
+		blockNo := binary.LittleEndian.Uint32(diffMap[i*4:i*4+4])
 		_, err = io.ReadFull(increment, page)
 		if err != nil {
 			return err
 		}
+
 		_, err = file.WriteAt(page, int64(blockNo)*int64(BlockSize))
 		if err != nil {
 			return err
 		}
 
-		_, err = io.ReadFull(increment, int32Bytes)
-		if err != nil {
-			return err
-		}
-		blockNo = binary.BigEndian.Uint32(int32Bytes)
-	}
-
-	n, err := increment.Read(int32Bytes)
-	if err != io.EOF || n > 0 {
-		return errors.New("Inconsistent sentinel at the end of increment for " + fileName)
 	}
 
 	return nil
+}
+
+func allZero(s []byte) bool {
+	for _, v := range s {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }

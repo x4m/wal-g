@@ -164,6 +164,13 @@ type S3TarBallSentinelDto struct {
 	IncrementFrom    *string   `json:"IncrementFrom,omitempty"`
 }
 
+func (dto *S3TarBallSentinelDto) IsIncremental() bool {
+	if (dto.IncrementFrom != nil) != (dto.IncrementFromLSN != nil) {
+		panic("Inconsistent S3TarBallSentinelDto")
+	}
+	return dto.IncrementFrom != nil
+}
+
 // Finish writes an empty .json file and uploads it with the
 // the backup name. Finish will wait until all tar file parts
 // have been uploaded. The json file will only be uploaded

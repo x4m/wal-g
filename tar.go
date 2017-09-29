@@ -19,7 +19,9 @@ type TarInterpreter interface {
 
 // FileTarInterpreter extracts input to disk.
 type FileTarInterpreter struct {
-	NewDir string
+	NewDir             string
+	Sentinel           S3TarBallSentinelDto
+	IncrementalBaseDir string
 }
 
 // Interpret extracts a tar file to disk and creates needed directories.
@@ -27,45 +29,58 @@ type FileTarInterpreter struct {
 // is written successfully.
 func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 	targetPath := path.Join(ti.NewDir, cur.Name)
+	incrementalPath := path.Join(ti.IncrementalBaseDir, cur.Name)
 	switch cur.Typeflag {
 	case tar.TypeReg, tar.TypeRegA:
-		var f *os.File
-
-		f, err := os.Create(targetPath)
-		dne := os.IsNotExist(err)
-		if dne {
-			base := filepath.Base(cur.Name)
-			dir := strings.TrimSuffix(targetPath, base)
-			err := os.MkdirAll(dir, 0755)
+		if ti.Sentinel.IsIncremental() {
+			err := ApplyFileIncrement(incrementalPath, tr)
 			if err != nil {
-				return errors.Wrap(err, "Interpret: failed to create all directories")
+				return errors.Wrap(err, "Interpret: failed to apply increment for "+targetPath)
 			}
-
-			f, err = os.Create(targetPath)
+			err = os.Rename(incrementalPath, targetPath)
 			if err != nil {
+				return errors.Wrap(err, "Interpret: failed to rename incremented file "+targetPath)
+			}
+		} else {
+
+			var f *os.File
+
+			f, err := os.Create(targetPath)
+			dne := os.IsNotExist(err)
+			if dne {
+				base := filepath.Base(cur.Name)
+				dir := strings.TrimSuffix(targetPath, base)
+				err := os.MkdirAll(dir, 0755)
+				if err != nil {
+					return errors.Wrap(err, "Interpret: failed to create all directories")
+				}
+
+				f, err = os.Create(targetPath)
+				if err != nil {
+					return errors.Wrapf(err, "Interpret: failed to create new file %s", targetPath)
+				}
+			}
+			if err != nil && !dne {
 				return errors.Wrapf(err, "Interpret: failed to create new file %s", targetPath)
 			}
-		}
-		if err != nil && !dne {
-			return errors.Wrapf(err, "Interpret: failed to create new file %s", targetPath)
-		}
 
-		_, err = io.Copy(f, tr)
-		if err != nil {
-			return errors.Wrap(err, "Interpret: copy failed")
-		}
+			_, err = io.Copy(f, tr)
+			if err != nil {
+				return errors.Wrap(err, "Interpret: copy failed")
+			}
 
-		mode := os.FileMode(cur.Mode)
-		if err = os.Chmod(f.Name(), mode); err != nil {
-			return errors.Wrap(err, "Interpret: chmod failed")
-		}
+			mode := os.FileMode(cur.Mode)
+			if err = os.Chmod(f.Name(), mode); err != nil {
+				return errors.Wrap(err, "Interpret: chmod failed")
+			}
 
-		if err = f.Sync(); err != nil {
-			return errors.Wrap(err, "Interpret: fsync failed")
-		}
+			if err = f.Sync(); err != nil {
+				return errors.Wrap(err, "Interpret: fsync failed")
+			}
 
-		if err = f.Close(); err != nil {
-			return errors.Wrapf(err, "Interpret: failed to close file %s", targetPath)
+			if err = f.Close(); err != nil {
+				return errors.Wrapf(err, "Interpret: failed to close file %s", targetPath)
+			}
 		}
 	case tar.TypeDir:
 		err := os.MkdirAll(targetPath, 0755)

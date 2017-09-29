@@ -14,6 +14,7 @@ import (
 	"github.com/wal-g/wal-g"
 	"encoding/json"
 	"io/ioutil"
+	"path"
 )
 
 var profile bool
@@ -330,8 +331,19 @@ func main() {
 
 }
 func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) {
-	var allKeys []string
-	var keys []string
+	IncrementalFetchRecursion(backupName, pre, dirArc)
+
+	if mem {
+		f, err := os.Create("mem.prof")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		pprof.WriteHeapProfile(f)
+		defer f.Close()
+	}
+}
+func IncrementalFetchRecursion(backupName string, pre *walg.Prefix, dirArc string) {
 	var bk *walg.Backup
 	// Check if BACKUPNAME exists and if it does extract to DIRARC.
 	if backupName != "LATEST" {
@@ -346,19 +358,12 @@ func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) 
 		if err != nil {
 			log.Fatalf("%+v\n", err)
 		}
-		if exists {
-			allKeys, err := bk.GetKeys()
-			if err != nil {
-				log.Fatalf("%+v\n", err)
-			}
-			keys = allKeys[:len(allKeys)-1]
-
-		} else {
+		if !exists {
 			log.Fatalf("Backup '%s' does not exist.\n", *bk.Name)
 		}
 
 		// Find the LATEST valid backup (checks against JSON file and grabs backup name) and extract to DIRARC.
-	} else if backupName == "LATEST" {
+	} else {
 		bk = &walg.Backup{
 			Prefix: pre,
 			Path:   aws.String(*pre.Server + "/basebackups_005/"),
@@ -369,14 +374,73 @@ func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) 
 			log.Fatalf("%+v\n", err)
 		}
 		bk.Name = aws.String(latest)
-		allKeys, err = bk.GetKeys()
-		if err != nil {
-			log.Fatalf("%+v\n", err)
-		}
-		keys = allKeys[:len(allKeys)-1]
 	}
+	var dto = fetchSentinel(*bk.Name, bk, pre)
+
+	if dto.IsIncremental() {
+		fmt.Printf("Increment from %v at LSN %x \n", *dto.IncrementFrom, *dto.IncrementFromLSN)
+		IncrementalFetchRecursion(*dto.IncrementFrom, pre, dirArc)
+		fmt.Printf("%v fetched. Upgrading from LSN %x to LSN %x \n", *dto.IncrementFrom, *dto.IncrementFromLSN, dto.LSN)
+	}
+
+	UnwrapBackup(bk, dirArc, pre, dto)
+}
+func UnwrapBackup(bk *walg.Backup, dirArc string, pre *walg.Prefix, sentinel walg.S3TarBallSentinelDto) {
+
+	incrementBase := path.Join(dirArc, "increment_base")
+	if !sentinel.IsIncremental() {
+		var empty = true
+		searchLambda := func(path string, info os.FileInfo, err error) error {
+			if path != dirArc {
+				empty = false
+			}
+			return nil
+		}
+		filepath.Walk(dirArc, searchLambda)
+
+		if !empty {
+			log.Fatalf("Directory %v for increment base must be empty", dirArc)
+		}
+	} else {
+		defer func() {
+			err := os.RemoveAll(incrementBase)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}()
+
+		err := os.MkdirAll(incrementBase, os.FileMode(0777))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		files, err := ioutil.ReadDir(dirArc)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, f := range files {
+			objName := f.Name()
+			if objName != "increment_base" {
+				err := os.Rename(path.Join(dirArc, objName), path.Join(incrementBase, objName))
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+		}
+	}
+
+	var allKeys []string
+	var keys []string
+	allKeys, err := bk.GetKeys()
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	keys = allKeys[:len(allKeys)-1]
 	f := &walg.FileTarInterpreter{
-		NewDir: dirArc,
+		NewDir:   dirArc,
+		Sentinel: sentinel,
+		IncrementalBaseDir:incrementBase,
 	}
 	out := make([]walg.ReaderMaker, len(keys))
 	for i, key := range keys {
@@ -388,7 +452,7 @@ func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) 
 		out[i] = s
 	}
 	// Extract all compressed tar members except `pg_control.tar.lz4` if WALG version backup.
-	err := walg.ExtractAll(f, out)
+	err = walg.ExtractAll(f, out)
 	if serr, ok := err.(*walg.UnsupportedFileTypeError); ok {
 		log.Fatalf("%v\n", serr)
 	} else if err != nil {
@@ -428,15 +492,6 @@ func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) 
 			log.Fatal("Corrupt backup: missing pg_control")
 		}
 	}
-	if mem {
-		f, err := os.Create("mem.prof")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		pprof.WriteHeapProfile(f)
-		defer f.Close()
-	}
 }
 func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Prefix) {
 	var bk = &walg.Backup{
@@ -450,27 +505,7 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 		if err != nil {
 			log.Fatalf("%+v\n", err)
 		}
-		latestSentinel := latest + "_backup_stop_sentinel.json"
-
-		previosBackupReader := walg.S3ReaderMaker{
-			Backup:     bk,
-			Key:        aws.String(*pre.Server + "/basebackups_005/" + latestSentinel),
-			FileFormat: walg.CheckType(latestSentinel),
-		}
-
-		prevBackup, err := previosBackupReader.Reader()
-
-		if err != nil {
-			log.Fatalf("%+v\n", err)
-		}
-		sentinelDto, err := ioutil.ReadAll(prevBackup)
-		if err != nil {
-			log.Fatalf("%+v\n", err)
-		}
-		err = json.Unmarshal(sentinelDto, &dto)
-		if err != nil {
-			log.Fatalf("%+v\n", err)
-		}
+		dto = fetchSentinel(latest, bk, pre)
 	}
 
 	// Connect to postgres and start/finish a nonexclusive backup.
@@ -521,4 +556,26 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 	if err != nil {
 		log.Fatalf("%+v\n", err)
 	}
+}
+func fetchSentinel(backupName string, bk *walg.Backup, pre *walg.Prefix) (dto walg.S3TarBallSentinelDto) {
+	latestSentinel := backupName + "_backup_stop_sentinel.json"
+	previousBackupReader := walg.S3ReaderMaker{
+		Backup:     bk,
+		Key:        aws.String(*pre.Server + "/basebackups_005/" + latestSentinel),
+		FileFormat: walg.CheckType(latestSentinel),
+	}
+	prevBackup, err := previousBackupReader.Reader()
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	sentinelDto, err := ioutil.ReadAll(prevBackup)
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+
+	err = json.Unmarshal(sentinelDto, &dto)
+	if err != nil {
+		log.Fatalf("%+v\n", err)
+	}
+	return
 }
