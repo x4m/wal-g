@@ -59,6 +59,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/ioutil"
 )
 
 const BlockSize uint16 = 8192
@@ -297,8 +298,8 @@ func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 	}
 
 	file, err := os.OpenFile(fileName, os.O_RDWR, 0666)
-	defer file.Sync()
 	defer file.Close()
+	defer file.Sync()
 	if err != nil {
 		return err
 	}
@@ -321,6 +322,11 @@ func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 			return err
 		}
 
+	}
+
+	all, _ := ioutil.ReadAll(increment)
+	if len(all)>0 {
+		return errors.New("Expected end of Tar")
 	}
 
 	return nil

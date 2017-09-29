@@ -42,13 +42,23 @@ func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 	incrementalPath := path.Join(ti.IncrementalBaseDir, cur.Name)
 	switch cur.Typeflag {
 	case tar.TypeReg, tar.TypeRegA:
-		if ti.Sentinel.IsIncremental() && contains(ti.Sentinel.IncrementFiles,cur.Name ){
+		if ti.Sentinel.IsIncremental() && contains(ti.Sentinel.IncrementFiles, cur.Name) {
 			err := ApplyFileIncrement(incrementalPath, tr)
 			if err != nil {
 				return errors.Wrap(err, "Interpret: failed to apply increment for "+targetPath)
 			}
+
 			err = os.Rename(incrementalPath, targetPath)
-			if err != nil {
+			if os.IsNotExist(err){
+				err := PrepareDirs(cur, targetPath)
+				if err != nil {
+					return errors.Wrap(err, "Interpret: failed to create all directories")
+				}
+				err = os.Rename(incrementalPath, targetPath)
+				if err != nil {
+					return errors.Wrap(err, "Interpret: failed to rename incremented file "+targetPath)
+				}
+			} else if err != nil {
 				return errors.Wrap(err, "Interpret: failed to rename incremented file "+targetPath)
 			}
 		} else {
@@ -58,9 +68,7 @@ func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 			f, err := os.Create(targetPath)
 			dne := os.IsNotExist(err)
 			if dne {
-				base := filepath.Base(cur.Name)
-				dir := strings.TrimSuffix(targetPath, base)
-				err := os.MkdirAll(dir, 0755)
+				err := PrepareDirs(cur, targetPath)
 				if err != nil {
 					return errors.Wrap(err, "Interpret: failed to create all directories")
 				}
@@ -112,4 +120,10 @@ func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 
 	fmt.Println(cur.Name)
 	return nil
+}
+func PrepareDirs(cur *tar.Header, targetPath string) error {
+	base := filepath.Base(cur.Name)
+	dir := strings.TrimSuffix(targetPath, base)
+	err := os.MkdirAll(dir, 0755)
+	return err
 }
