@@ -24,6 +24,16 @@ type FileTarInterpreter struct {
 	IncrementalBaseDir string
 }
 
+func contains(s *[]string, e string) bool {
+	//AB: Go is sick
+	for _, a := range *s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
 // Interpret extracts a tar file to disk and creates needed directories.
 // Returns the first error encountered. Calls fsync after each file
 // is written successfully.
@@ -32,7 +42,7 @@ func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 	incrementalPath := path.Join(ti.IncrementalBaseDir, cur.Name)
 	switch cur.Typeflag {
 	case tar.TypeReg, tar.TypeRegA:
-		if ti.Sentinel.IsIncremental() {
+		if ti.Sentinel.IsIncremental() && contains(ti.Sentinel.IncrementFiles,cur.Name ){
 			err := ApplyFileIncrement(incrementalPath, tr)
 			if err != nil {
 				return errors.Wrap(err, "Interpret: failed to apply increment for "+targetPath)

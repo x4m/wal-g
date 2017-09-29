@@ -82,30 +82,33 @@ func HandleTar(bundle TarBundle, path string, info os.FileInfo) error {
 		hdr.Name = strings.TrimPrefix(path, tarBall.Trim())
 		fmt.Println(hdr.Name)
 
-		err = tarWriter.WriteHeader(hdr)
-		if err != nil {
-			return errors.Wrap(err, "HandleTar: failed to write header")
-		}
 		if info.Mode().IsRegular() {
-			f, isPaged, err := ReadDatabaseFile(path, bundle.GetLsn())
+			f, isPaged, size, err := ReadDatabaseFile(path, bundle.GetLsn())
 			if err != nil {
 				return errors.Wrapf(err, "HandleTar: failed to open file '%s'\n", path)
 			}
+
+			hdr.Size = size
 			if isPaged {
-				tarBall.AppendIncrementalFile(path)
+				tarBall.AppendIncrementalFile(hdr.Name)
+			}
+
+
+			err = tarWriter.WriteHeader(hdr)
+			if err != nil {
+				return errors.Wrap(err, "HandleTar: failed to write header")
 			}
 			lim := &io.LimitedReader{
 				R: io.MultiReader(f, &ZeroReader{}),
 				N: int64(hdr.Size),
 			}
 
-			size, err := io.Copy(tarWriter, lim)
+			size, err = io.Copy(tarWriter, lim)
 			if err != nil {
 				return errors.Wrap(err, "HandleTar: copy failed")
 			}
 
-			hdr.Size = size
-			tarBall.SetSize(size)
+			tarBall.SetSize(hdr.Size)
 			f.Close()
 		}
 	} else if ok && info.Mode().IsDir() {

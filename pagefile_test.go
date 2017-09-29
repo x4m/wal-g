@@ -12,12 +12,12 @@ import (
 
 const (
 	pagedFileName        = "testdata/paged_file.bin"
-	sampeLSN      uint64 = 0xc6bd460000000000
+	sampeLSN      uint64 = 0xc6bd4600
 )
 
 func TestCheckType(t *testing.T) {
 	loclLSN := sampeLSN
-	reader, isPaged, err := ReadDatabaseFile(pagedFileName, &loclLSN)
+	reader, isPaged, size, err := ReadDatabaseFile(pagedFileName, &loclLSN)
 	file, _ := os.Stat(pagedFileName)
 	if err != nil {
 		fmt.Print(err.Error())
@@ -31,6 +31,10 @@ func TestCheckType(t *testing.T) {
 		t.Error("Increment is too big")
 	}
 
+	if int(size) != len(buf){
+		t.Error("Increment has wrong size")
+	}
+
 	tmpFileName := pagedFileName + "_tmp"
 	CopyFile(pagedFileName, tmpFileName)
 	defer os.Remove(tmpFileName)
@@ -39,9 +43,15 @@ func TestCheckType(t *testing.T) {
 	tmpFile.WriteAt(make([]byte, 12345), 477421568-12345)
 	tmpFile.Close()
 
-	err = ApplyFileIncrement(tmpFileName, bytes.NewReader(buf))
+	newReader := bytes.NewReader(buf)
+	err = ApplyFileIncrement(tmpFileName, newReader)
 	if err != nil {
 		t.Error(err)
+	}
+
+	_, err = newReader.Read(make([]byte, 1))
+	if err!=io.EOF {
+		t.Error("Not read to the end")
 	}
 
 	compare := deepCompare(pagedFileName, tmpFileName)
@@ -71,7 +81,7 @@ func CopyFile(src, dst string) error {
 	return out.Close()
 }
 
-const chunkSize = 64000
+const chunkSize = 64
 
 func deepCompare(file1, file2 string) bool {
 	// Check file size ...
@@ -85,8 +95,9 @@ func deepCompare(file1, file2 string) bool {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	var chunkNumber = 0
 	for {
+
 		b1 := make([]byte, chunkSize)
 		_, err1 := f1.Read(b1)
 
@@ -104,7 +115,11 @@ func deepCompare(file1, file2 string) bool {
 		}
 
 		if !bytes.Equal(b1, b2) {
+			log.Printf("Bytes at %v differ\n",chunkNumber * chunkSize)
+			log.Println(b1)
+			log.Println(b2)
 			return false
 		}
+		chunkNumber++
 	}
 }
