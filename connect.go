@@ -5,8 +5,6 @@ import (
 
 	"github.com/jackc/pgx"
 	"github.com/pkg/errors"
-	"strings"
-	"strconv"
 )
 
 // Connect establishes a connection to postgres using
@@ -49,15 +47,7 @@ func StartBackup(conn *pgx.Conn, backup string) (string, uint64, error) {
 	if err != nil {
 		return "", lsn, errors.Wrap(err, "QueryFile: start backup failed")
 	}
-	lsnArray := strings.SplitN(lsnStr, "/", 2)
-
-	highLsn, err := strconv.ParseUint(lsnArray[0], 16, 32)
-	lowLsn, err2 := strconv.ParseUint(lsnArray[1], 16, 32)
-	if err != nil || err2 !=nil {
-		return "", lsn, errors.Wrap(err, "QueryFile: unable to parse LSN "+lsnStr)
-	}
-
-	lsn = highLsn<<32 + lowLsn
+	lsn, err = ParseLsn(lsnStr)
 
 	return "base_" + name, lsn, nil
 }

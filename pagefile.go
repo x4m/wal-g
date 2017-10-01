@@ -1,6 +1,16 @@
-package walg
+//
+// This file provides low level routines for handling incremental backup
+// Incremental file format is:
+// 4 bytes header with designation information, format version and magic number
+// 8 bytes uint file size
+// 4 bytes uint changed pages count N
+// (N * 4) bytes for Block Numbers of changed pages
+// (N * BlockSize) bytes for changed page data
+//
 
+package walg
 /*
+// This block is CGo Postgres page header parsing. This is comment in comment. Cool.
 #include <inttypes.h>
 typedef struct PageHeaderData
 {
@@ -33,6 +43,8 @@ PageProbeResult GetLSNIfPageIsValid(void* ptr)
 	PageHeaderData* data = (PageHeaderData*) ptr;
 	PageProbeResult result = {0 , invalid_lsn};
 
+	//LSN layout is neither big endian nor low endiang, here we conver it to comparable form
+	// This form must be coherent with ParseLsn() function which is used by StartBackup()
 	result.lsn = (((uint64_t)data->pd_lsn_h) << 32) + ((uint64_t)data->pd_lsn_l);
 
 	if ((data->pd_flags & valid_flags) != data->pd_flags ||
@@ -59,10 +71,30 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"strconv"
 )
 
-const BlockSize uint16 = 8192
+const (
+	BlockSize            uint16 = 8192
+	sizeofInt32                 = 4
+	sizeofInt64                 = 8
+	sizeofPgPageHeader          = 24
+	signatureMagicNumber byte   = 0x55
+)
+
+func ParseLsn(lsnStr string) (lsn uint64, err error) {
+	lsnArray := strings.SplitN(lsnStr, "/", 2)
+
+	//Postgres format it's LSNs as two hex numbers separated by /
+	highLsn, err := strconv.ParseUint(lsnArray[0], 0x10, sizeofInt32*8)
+	lowLsn, err2 := strconv.ParseUint(lsnArray[1], 0x10, sizeofInt32*8)
+	if err != nil || err2 != nil {
+		err = errors.New("Unable to parse LSN " + lsnStr)
+	}
+
+	lsn = highLsn<<32 + lowLsn
+	return
+}
 
 func ParsePageHeader(data []byte) (uint64, bool) {
 	res := C.GetLSNIfPageIsValid(unsafe.Pointer(&data[0]))
@@ -88,14 +120,17 @@ func IsPagedFile(info os.FileInfo) bool {
 	return true
 }
 
+// This function ensures Postgres page header sitructure has correct size
 func StaticStructAllignmentCheck() {
 	var dummy C.PageHeaderData
 	sizeof := unsafe.Sizeof(dummy)
-	if sizeof != 24 {
+	if sizeof != sizeofPgPageHeader {
 		panic("Error in PageHeaderData struct compilation");
 	}
 }
 
+// Reader consturcts difference map during initialization and than re-read file
+// Diff map can be of 1Gb/PostgresBlockSize elements == 512Kb
 type IncrementalPageReader struct {
 	backlog chan []byte
 	file    *io.LimitedReader
@@ -166,13 +201,15 @@ var InvalidBlock = errors.New("Block is not valid")
 
 func (pr *IncrementalPageReader) Initialize() (size int64, err error) {
 	size = 0
-	pr.next = &[]byte{0, 1, 1, 0x55}; //format version 0.1, type 1, signature magic number
-	size += 4
-	fileSizeBytes := make([]byte, 8)
+	// "wi" at the head stands for "wal-g increment"
+	// format version "1", signature magic number
+	pr.next = &[]byte{'w', 'i', '1', signatureMagicNumber};
+	size += sizeofInt32
+	fileSizeBytes := make([]byte, sizeofInt64)
 	fileSize := pr.info.Size()
 	binary.LittleEndian.PutUint64(fileSizeBytes, uint64(fileSize))
 	pr.backlog <- fileSizeBytes
-	size += 8
+	size += sizeofInt64
 
 	pageBytes := make([]byte, BlockSize)
 	pr.blocks = make([]uint32, 0, fileSize/int64(BlockSize))
@@ -185,19 +222,19 @@ func (pr *IncrementalPageReader) Initialize() (size int64, err error) {
 
 		if err == io.EOF {
 			diffBlockCount := len(pr.blocks)
-			lenBytes := make([]byte, 4)
+			lenBytes := make([]byte, sizeofInt32)
 			binary.LittleEndian.PutUint32(lenBytes, uint32(diffBlockCount))
 			pr.backlog <- lenBytes
-			size += 4
+			size += sizeofInt32
 
-			diffMap := make([]byte, diffBlockCount*4)
+			diffMap := make([]byte, diffBlockCount*sizeofInt32)
 
 			for index, blockNo := range pr.blocks {
-				binary.LittleEndian.PutUint32(diffMap[index*4:index*4+4], blockNo)
+				binary.LittleEndian.PutUint32(diffMap[index*sizeofInt32:(index+1)*sizeofInt32], blockNo)
 			}
 
 			pr.backlog <- diffMap
-			size += int64(diffBlockCount * 4)
+			size += int64(diffBlockCount * sizeofInt32)
 			dataSize := int64(len(pr.blocks)) * int64(BlockSize)
 			size += dataSize
 			_, err := pr.seeker.Seek(0, 0)
@@ -210,7 +247,7 @@ func (pr *IncrementalPageReader) Initialize() (size int64, err error) {
 
 		if err == nil {
 			lsn, valid := ParsePageHeader(pageBytes)
-			//fmt.Printf("pr.lsn %x page lsn %x valid %v\n",pr.lsn,lsn,valid)
+
 			var allZeroes = false
 			if !valid && allZero(pageBytes) {
 				allZeroes = true
@@ -251,7 +288,7 @@ func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, int64,
 		N: int64(fileSize),
 	}
 
-	reader := &IncrementalPageReader{make(chan []byte, 32), lim, file, file, info, *lsn, nil, nil}
+	reader := &IncrementalPageReader{make(chan []byte, 4), lim, file, file, info, *lsn, nil, nil}
 	incrSize, err := reader.Initialize()
 	if err != nil {
 		if err == InvalidBlock {
@@ -271,14 +308,22 @@ func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, int64,
 
 func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 	fmt.Println("Incrementing " + fileName)
-	header := make([]byte, 4)
-	fileSizeBytes := make([]byte, 8)
-	diffBlockBytes := make([]byte, 4)
+	header := make([]byte, sizeofInt32)
+	fileSizeBytes := make([]byte, sizeofInt64)
+	diffBlockBytes := make([]byte, sizeofInt32)
 
 	_, err := io.ReadFull(increment, header)
 	if err != nil {
 		return err
 	}
+
+	if header[0] != 'w' || header[1] != 'i' || header[3] != signatureMagicNumber {
+		return errors.New("Invalid increment file header")
+	}
+	if header[2] != '1' {
+		return errors.New("Unknown increment file header")
+	}
+
 	_, err = io.ReadFull(increment, fileSizeBytes)
 	if err != nil {
 		return err
@@ -290,7 +335,7 @@ func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 
 	fileSize := binary.LittleEndian.Uint64(fileSizeBytes)
 	diffBlockCount := binary.LittleEndian.Uint32(diffBlockBytes)
-	diffMap := make([]byte, diffBlockCount*4)
+	diffMap := make([]byte, diffBlockCount*sizeofInt32)
 
 	_, err = io.ReadFull(increment, diffMap)
 	if err != nil {
@@ -311,7 +356,7 @@ func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 
 	page := make([]byte, BlockSize)
 	for i := uint32(0); i < diffBlockCount; i++ {
-		blockNo := binary.LittleEndian.Uint32(diffMap[i*4:i*4+4])
+		blockNo := binary.LittleEndian.Uint32(diffMap[i*sizeofInt32:(i+1)*sizeofInt32])
 		_, err = io.ReadFull(increment, page)
 		if err != nil {
 			return err
@@ -321,11 +366,10 @@ func ApplyFileIncrement(fileName string, increment io.Reader) (error) {
 		if err != nil {
 			return err
 		}
-
 	}
 
-	all, _ := ioutil.ReadAll(increment)
-	if len(all)>0 {
+	all, _ := increment.Read(make([]byte, 1))
+	if all > 0 {
 		return errors.New("Expected end of Tar")
 	}
 

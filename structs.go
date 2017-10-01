@@ -47,7 +47,7 @@ type Empty struct{}
 type TarBundle interface {
 	NewTarBall()
 	GetTarBall() TarBall
-	GetLsn() *uint64
+	GetIncrementBaseLsn() *uint64
 }
 
 // A Bundle represents the directory to
@@ -68,11 +68,15 @@ func (b *Bundle) GetTarBall() TarBall { return b.Tb }
 func (b *Bundle) NewTarBall() {
 	ntb := b.Tbm.Make()
 	if b.Tb != nil {
+		// List of incremental files are inherited from previous Tar from the same bundle
+		// This design decision is based on Finish() function placement and TarWalker() behavior.
+		// This can be refactored so that list of incremented files would be in Bundle,
+		// but such refactoring will incur significant control flow and class responsibility changes.
 		ntb.AppendIncrementalFile(b.Tb.GetIncrementalFiles()...)
 	}
 	b.Tb = ntb
 }
-func (b *Bundle) GetLsn() *uint64 { return b.IncrementFromLsn }
+func (b *Bundle) GetIncrementBaseLsn() *uint64 { return b.IncrementFromLsn }
 
 // Sentinel is used to signal completion of a walked
 // directory.

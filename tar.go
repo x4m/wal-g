@@ -39,9 +39,11 @@ func contains(s *[]string, e string) bool {
 // is written successfully.
 func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 	targetPath := path.Join(ti.NewDir, cur.Name)
+	// this path is only used for increment restoration
 	incrementalPath := path.Join(ti.IncrementalBaseDir, cur.Name)
 	switch cur.Typeflag {
 	case tar.TypeReg, tar.TypeRegA:
+		// If this file is incremental we use it's base version from incremental path
 		if ti.Sentinel.IsIncremental() && contains(ti.Sentinel.IncrementFiles, cur.Name) {
 			err := ApplyFileIncrement(incrementalPath, tr)
 			if err != nil {
@@ -49,7 +51,8 @@ func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 			}
 
 			err = os.Rename(incrementalPath, targetPath)
-			if os.IsNotExist(err){
+			if os.IsNotExist(err) {
+				// this path is invoked if this is a first file in a dir
 				err := PrepareDirs(cur, targetPath)
 				if err != nil {
 					return errors.Wrap(err, "Interpret: failed to create all directories")

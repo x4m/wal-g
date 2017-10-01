@@ -83,7 +83,7 @@ func HandleTar(bundle TarBundle, path string, info os.FileInfo) error {
 		fmt.Println(hdr.Name)
 
 		if info.Mode().IsRegular() {
-			f, isPaged, size, err := ReadDatabaseFile(path, bundle.GetLsn())
+			f, isPaged, size, err := ReadDatabaseFile(path, bundle.GetIncrementBaseLsn())
 			if err != nil {
 				return errors.Wrapf(err, "HandleTar: failed to open file '%s'\n", path)
 			}

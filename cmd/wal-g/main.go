@@ -330,6 +330,8 @@ func main() {
 	}
 
 }
+
+
 func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) {
 	IncrementalFetchRecursion(backupName, pre, dirArc)
 
@@ -343,6 +345,9 @@ func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) 
 		defer f.Close()
 	}
 }
+
+
+// This function composes Backup object and recursively searches for necsessary base backup
 func IncrementalFetchRecursion(backupName string, pre *walg.Prefix, dirArc string) {
 	var bk *walg.Backup
 	// Check if BACKUPNAME exists and if it does extract to DIRARC.
@@ -385,6 +390,8 @@ func IncrementalFetchRecursion(backupName string, pre *walg.Prefix, dirArc strin
 
 	UnwrapBackup(bk, dirArc, pre, dto)
 }
+
+// Do the job of unpacking Backup object
 func UnwrapBackup(bk *walg.Backup, dirArc string, pre *walg.Prefix, sentinel walg.S3TarBallSentinelDto) {
 
 	incrementBase := path.Join(dirArc, "increment_base")
@@ -493,6 +500,7 @@ func UnwrapBackup(bk *walg.Backup, dirArc string, pre *walg.Prefix, sentinel wal
 		}
 	}
 }
+
 func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Prefix) {
 	var bk = &walg.Backup{
 		Prefix: pre,
@@ -506,6 +514,10 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 			log.Fatalf("%+v\n", err)
 		}
 		dto = fetchSentinel(latest, bk, pre)
+	}
+
+	if dto.LSN == nil {
+		fmt.Println("LATEST backup was made without increment feature. Fallback to full backup with increment LSN marker. \n")
 	}
 
 	// Connect to postgres and start/finish a nonexclusive backup.
@@ -557,6 +569,7 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 		log.Fatalf("%+v\n", err)
 	}
 }
+
 func fetchSentinel(backupName string, bk *walg.Backup, pre *walg.Prefix) (dto walg.S3TarBallSentinelDto) {
 	latestSentinel := backupName + "_backup_stop_sentinel.json"
 	previousBackupReader := walg.S3ReaderMaker{
