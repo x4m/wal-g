@@ -331,7 +331,6 @@ func main() {
 
 }
 
-
 func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) {
 	IncrementalFetchRecursion(backupName, pre, dirArc)
 
@@ -345,7 +344,6 @@ func handleIncrementalFetch(backupName string, pre *walg.Prefix, dirArc string) 
 		defer f.Close()
 	}
 }
-
 
 // This function composes Backup object and recursively searches for necsessary base backup
 func IncrementalFetchRecursion(backupName string, pre *walg.Prefix, dirArc string) {
@@ -445,9 +443,9 @@ func UnwrapBackup(bk *walg.Backup, dirArc string, pre *walg.Prefix, sentinel wal
 	}
 	keys = allKeys[:len(allKeys)-1]
 	f := &walg.FileTarInterpreter{
-		NewDir:   dirArc,
-		Sentinel: sentinel,
-		IncrementalBaseDir:incrementBase,
+		NewDir:             dirArc,
+		Sentinel:           sentinel,
+		IncrementalBaseDir: incrementBase,
 	}
 	out := make([]walg.ReaderMaker, len(keys))
 	for i, key := range keys {
@@ -517,7 +515,9 @@ func handleIncrementalBackup(dirArc string, tu *walg.TarUploader, pre *walg.Pref
 	}
 
 	if dto.LSN == nil {
-		fmt.Println("LATEST backup was made without increment feature. Fallback to full backup with increment LSN marker. \n")
+		fmt.Println("LATEST backup was made without increment feature. Fallback to full backup with increment LSN marker.")
+	} else {
+		fmt.Printf("Incremental backup from %v with LSN %x. \n", latest, *dto.LSN)
 	}
 
 	// Connect to postgres and start/finish a nonexclusive backup.

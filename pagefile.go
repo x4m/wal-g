@@ -293,7 +293,7 @@ func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, int64,
 	if err != nil {
 		if err == InvalidBlock {
 			file.Close()
-			fmt.Printf("File %v has invalid pages, fallback to full backup\n")
+			fmt.Printf("File %v has invalid pages, fallback to full backup\n", fileName)
 			file, err = os.Open(fileName)
 			if err != nil {
 				return nil, false, fileSize, err
