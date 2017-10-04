@@ -71,13 +71,13 @@ var LatestNotFound = errors.New("LATEST backup not found")
 // GetLatest sorts the backups by last modified time
 // and returns the latest backup key.
 func (b *Backup) GetLatest() (string, error) {
-	objects := &s3.ListObjectsV2Input{
+	objects := &s3.ListObjectsInput{
 		Bucket:    b.Prefix.Bucket,
 		Prefix:    b.Path,
 		Delimiter: aws.String("/"),
 	}
 
-	backups, err := b.Prefix.Svc.ListObjectsV2(objects)
+	backups, err := b.Prefix.Svc.ListObjects(objects)
 	if err != nil {
 		return "", errors.Wrap(err, "GetLatest: s3.ListObjectsV2 failed")
 
