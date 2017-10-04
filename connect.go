@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx"
 	"github.com/pkg/errors"
+	"fmt"
 )
 
 // Connect establishes a connection to postgres using
@@ -44,7 +45,9 @@ func StartBackup(conn *pgx.Conn, backup string) (string, uint64, error) {
 		walname = "wal"
 	}
 
-	err = conn.QueryRow("SELECT (pg_"+walname+"file_name_offset(lsn)).file_name, lsn::text FROM pg_start_backup($1, true, false) lsn", backup).Scan(&name, &lsnStr)
+	query := "SELECT case when pg_is_in_recovery() then replace(lsn::text,'/','_') else (pg_" + walname + "file_name_offset(lsn)).file_name end, lsn::text FROM pg_start_backup($1, true, false) lsn"
+	fmt.Println(query)
+	err = conn.QueryRow(query, backup).Scan(&name, &lsnStr)
 	if err != nil {
 		return "", lsn, errors.Wrap(err, "QueryFile: start backup failed")
 	}
