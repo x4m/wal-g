@@ -63,7 +63,7 @@ type LzPipeWriter struct {
 
 // Compress compresses input to a pipe reader. Output must be used or
 // pipe will block.
-func (p *LzPipeWriter) Compress(crypter *Crypter) {
+func (p *LzPipeWriter) Compress(crypter Crypter) {
 	pr, pw := io.Pipe()
 	p.Output = pr
 

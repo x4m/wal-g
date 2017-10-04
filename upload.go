@@ -193,7 +193,7 @@ func (tu *TarUploader) createUploadInput(path string, reader io.Reader) *s3manag
 
 // StartUpload creates a lz4 writer and runs upload in the background once
 // a compressed tar member is finished writing.
-func (s *S3TarBall) StartUpload(name string, crypter *Crypter) io.WriteCloser {
+func (s *S3TarBall) StartUpload(name string, crypter Crypter) io.WriteCloser {
 	pr, pw := io.Pipe()
 	tupl := s.tu
 
@@ -243,7 +243,7 @@ func (tu *TarUploader) UploadWal(path string) (string, error) {
 		Input: f,
 	}
 
-	lz.Compress(&Crypter{})
+	lz.Compress(&OpenPGPCrypter{})
 
 	p := tu.server + "/wal_005/" + filepath.Base(path) + ".lz4"
 	input := tu.createUploadInput(p, lz.Output)

@@ -54,7 +54,7 @@ func extractOne(ti TarInterpreter, s io.Reader) error {
 
 // Ensures that file extension is valid. Any subsequent behavior
 // depends on file type.
-func tarHandler(wc io.WriteCloser, rm ReaderMaker, crypter *Crypter) error {
+func tarHandler(wc io.WriteCloser, rm ReaderMaker, crypter Crypter) error {
 	defer wc.Close()
 	r, err := rm.Reader()
 
@@ -130,7 +130,7 @@ func ExtractAll(ti TarInterpreter, files []ReaderMaker) error {
 		concurrent <- Empty{}
 	}
 
-	var crypter Crypter
+	var crypter OpenPGPCrypter
 
 	for i, val := range files {
 		<-concurrent

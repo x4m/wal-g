@@ -59,7 +59,7 @@ type Bundle struct {
 	Sen     *Sentinel
 	Tb      TarBall
 	Tbm     TarBallMaker
-	Crypter Crypter
+	Crypter ExternalGPGCrypter
 }
 
 func (b *Bundle) GetTarBall() TarBall { return b.Tb }
@@ -74,7 +74,7 @@ type Sentinel struct {
 
 // A TarBall represents one tar file.
 type TarBall interface {
-	SetUp(crypter *Crypter, args ...string)
+	SetUp(crypter Crypter, args ...string)
 	CloseTar() error
 	Finish() error
 	BaseDir() string
@@ -104,7 +104,7 @@ type S3TarBall struct {
 // Upload will block until the tar file is finished writing.
 // If a name for the file is not given, default name is of
 // the form `part_....tar.lz4`.
-func (s *S3TarBall) SetUp(crypter *Crypter, names ...string) {
+func (s *S3TarBall) SetUp(crypter Crypter, names ...string) {
 	if s.tw == nil {
 		var name string
 		if len(names) > 0 {

@@ -66,7 +66,7 @@ func (bundle *Bundle) TarWalker(path string, info os.FileInfo, err error) error 
 // Does not follow symlinks. If file is in EXCLUDE, will not be included
 // in the final tarball. EXCLUDED directories are created
 // but their contents are not written to local disk.
-func HandleTar(bundle TarBundle, path string, info os.FileInfo, crypter *Crypter) error {
+func HandleTar(bundle TarBundle, path string, info os.FileInfo, crypter Crypter) error {
 	tarBall := bundle.GetTarBall()
 	fileName := info.Name()
 	_, ok := EXCLUDE[info.Name()]
