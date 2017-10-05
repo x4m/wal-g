@@ -108,11 +108,8 @@ func ParsePageHeader(data []byte) (uint64, bool) {
 
 func IsPagedFile(info os.FileInfo) bool {
 	StaticStructAllignmentCheck()
-	name := info.Name()
 
 	if info.IsDir() ||
-		strings.HasSuffix(name, "_fsm") ||
-		strings.HasSuffix(name, "_vm") ||
 		info.Size() == 0 ||
 		info.Size()%int64(BlockSize) != 0 {
 		return false
