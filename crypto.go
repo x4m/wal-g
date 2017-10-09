@@ -9,11 +9,17 @@ import (
 	"errors"
 )
 
+type Crypter interface {
+	IsUsed() bool
+	Encrypt(writer io.WriteCloser) (io.WriteCloser, error)
+	Decrypt(reader io.ReadCloser) (io.Reader, error)
+}
+
 // Crypter incapsulates specific of cypher method
 // Includes keys, infrastructutre information etc
 // If many encryption methods will be used it worth
 // to extract interface
-type Crypter struct {
+type OpenPGPCrypter struct {
 	configured, armed bool
 	keyRingId         string
 
@@ -23,15 +29,15 @@ type Crypter struct {
 
 // Function to check necessity of Crypter use
 // Must be called prior to any other crypter call
-func (crypter *Crypter) IsUsed() bool {
+func (crypter *OpenPGPCrypter) IsUsed() bool {
 	if !crypter.configured {
 		crypter.ConfigureGPGCrypter()
 	}
 	return crypter.armed
 }
 
-// Internal Crypter initialization
-func (crypter *Crypter) ConfigureGPGCrypter() {
+// Internal OpenPGPCrypter initialization
+func (crypter *OpenPGPCrypter) ConfigureGPGCrypter() {
 	crypter.configured = true
 	crypter.keyRingId = GetKeyRingId()
 	crypter.armed = len(crypter.keyRingId) != 0
@@ -40,7 +46,7 @@ func (crypter *Crypter) ConfigureGPGCrypter() {
 var CrypterUseMischief = errors.New("Crypter is not checked before use")
 
 // Creates encryption writer from ordinary writer
-func (crypter *Crypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
+func (crypter *OpenPGPCrypter) Encrypt(writer io.WriteCloser) (io.WriteCloser, error) {
 	if !crypter.configured {
 		return nil, CrypterUseMischief
 	}
@@ -99,7 +105,7 @@ func (d *DelayWriteCloser) Close() error {
 }
 
 // Created decripted reader from ordinary reader
-func (crypter *Crypter) Decrypt(reader io.ReadCloser) (io.Reader, error) {
+func (crypter *OpenPGPCrypter) Decrypt(reader io.ReadCloser) (io.Reader, error) {
 	if !crypter.configured {
 		return nil, CrypterUseMischief
 	}
