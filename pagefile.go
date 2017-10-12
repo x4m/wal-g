@@ -9,6 +9,7 @@
 //
 
 package walg
+
 /*
 // This block is CGo Postgres page header parsing. This is comment in comment. Cool.
 #include <inttypes.h>
@@ -110,9 +111,10 @@ func IsPagedFile(info os.FileInfo) bool {
 	StaticStructAllignmentCheck()
 	name := info.Name()
 
+	// For details on which file is paged see
+	// https://www.postgresql.org/message-id/flat/F0627DEB-7D0D-429B-97A9-D321450365B4%40yandex-team.ru#F0627DEB-7D0D-429B-97A9-D321450365B4@yandex-team.ru
 	if info.IsDir() ||
 		strings.HasSuffix(name, "_fsm") ||
-		strings.HasSuffix(name, "_vm") ||
 		info.Size() == 0 ||
 		info.Size()%int64(BlockSize) != 0 {
 		return false
@@ -267,7 +269,7 @@ func (pr *IncrementalPageReader) Initialize() (size int64, err error) {
 	}
 }
 
-func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, int64, error) {
+func ReadDatabaseFile(fileName string, lsn *uint64, isNew bool) (io.ReadCloser, bool, int64, error) {
 	info, err := os.Stat(fileName)
 	fileSize := info.Size()
 	if err != nil {
@@ -279,7 +281,7 @@ func ReadDatabaseFile(fileName string, lsn *uint64) (io.ReadCloser, bool, int64,
 		return nil, false, fileSize, err
 	}
 
-	if lsn == nil || !IsPagedFile(info) {
+	if lsn == nil || isNew || !IsPagedFile(info) {
 		return file, false, fileSize, nil
 	}
 
