@@ -59,10 +59,11 @@ type TarBundle interface {
 // uploaded backups; in this case, pg_control is used as
 // the sentinel.
 type Bundle struct {
-	MinSize            int64
-	Sen                *Sentinel
-	Tb                 TarBall
-	Tbm                TarBallMaker
+	MinSize int64
+	Sen     *Sentinel
+	Tb      TarBall
+	Tbm     TarBallMaker
+	Crypter OpenPGPCrypter
 	IncrementFromLsn   *uint64
 	IncrementFromFiles BackupFileList
 }
@@ -93,7 +94,7 @@ type Sentinel struct {
 
 // A TarBall represents one tar file.
 type TarBall interface {
-	SetUp(args ...string)
+	SetUp(crypter Crypter, args ...string)
 	CloseTar() error
 	Finish() error
 	BaseDir() string
@@ -131,7 +132,7 @@ type S3TarBall struct {
 // Upload will block until the tar file is finished writing.
 // If a name for the file is not given, default name is of
 // the form `part_....tar.lz4`.
-func (s *S3TarBall) SetUp(names ...string) {
+func (s *S3TarBall) SetUp(crypter Crypter, names ...string) {
 	if s.tw == nil {
 		var name string
 		if len(names) > 0 {
@@ -139,7 +140,8 @@ func (s *S3TarBall) SetUp(names ...string) {
 		} else {
 			name = "part_" + fmt.Sprintf("%0.3d", s.number) + ".tar.lz4"
 		}
-		w := s.StartUpload(name)
+		w := s.StartUpload(name, crypter)
+
 		s.w = w
 		s.tw = tar.NewWriter(w)
 
