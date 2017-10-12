@@ -71,13 +71,13 @@ var LatestNotFound = errors.New("LATEST backup not found")
 // GetLatest sorts the backups by last modified time
 // and returns the latest backup key.
 func (b *Backup) GetLatest() (string, error) {
-	objects := &s3.ListObjectsV2Input{
+	objects := &s3.ListObjectsInput{
 		Bucket:    b.Prefix.Bucket,
 		Prefix:    b.Path,
 		Delimiter: aws.String("/"),
 	}
 
-	backups, err := b.Prefix.Svc.ListObjectsV2(objects)
+	backups, err := b.Prefix.Svc.ListObjects(objects)
 	if err != nil {
 		return "", errors.Wrap(err, "GetLatest: s3.ListObjectsV2 failed")
 
@@ -105,7 +105,7 @@ func (b *Backup) GetLatest() (string, error) {
 // Strips the backup key and returns it in its base form `base_...`.
 func stripNameBackup(key string) string {
 	all := strings.SplitAfter(key, "/")
-	name := strings.Split(all[2], "_backup")[0]
+	name := strings.Split(all[len(all)-1], "_backup")[0]
 	return name
 }
 
@@ -133,12 +133,12 @@ func (b *Backup) CheckExistence() (bool, error) {
 
 // GetKeys returns all the keys for the files in the specified backup.
 func (b *Backup) GetKeys() ([]string, error) {
-	objects := &s3.ListObjectsV2Input{
+	objects := &s3.ListObjectsInput{
 		Bucket: b.Prefix.Bucket,
 		Prefix: aws.String(*b.Path + *b.Name + "/tar_partitions"),
 	}
 
-	files, err := b.Prefix.Svc.ListObjectsV2(objects)
+	files, err := b.Prefix.Svc.ListObjects(objects)
 	if err != nil {
 		return nil, errors.Wrap(err, "GetKeys: s3.ListObjectsV2 failed")
 	}

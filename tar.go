@@ -50,7 +50,7 @@ func (ti *FileTarInterpreter) Interpret(tr io.Reader, cur *tar.Header) error {
 
 		// If this file is incremental we use it's base version from incremental path
 		fmt.Println(cur.Name)
-		fmt.Println(fd)
+
 		if haveFd && ti.Sentinel.IsIncremental() && fd.IsIncremented {
 			err := ApplyFileIncrement(incrementalPath, tr)
 			if err != nil {
