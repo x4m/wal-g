@@ -11,8 +11,10 @@ import (
 	"io"
 	"log"
 	"os"
-	"strings"
 	"sync"
+	"encoding/json"
+	"bytes"
+	"time"
 )
 
 // EXCLUDE is a list of excluded members from the bundled backup.
@@ -46,6 +48,8 @@ type Empty struct{}
 type TarBundle interface {
 	NewTarBall()
 	GetTarBall() TarBall
+	GetIncrementBaseLsn() *uint64
+	GetIncrementBaseFiles() BackupFileList
 }
 
 // A Bundle represents the directory to
@@ -60,10 +64,26 @@ type Bundle struct {
 	Tb      TarBall
 	Tbm     TarBallMaker
 	Crypter OpenPGPCrypter
+	IncrementFromLsn   *uint64
+	IncrementFromFiles BackupFileList
 }
 
 func (b *Bundle) GetTarBall() TarBall { return b.Tb }
-func (b *Bundle) NewTarBall()         { b.Tb = b.Tbm.Make() }
+func (b *Bundle) NewTarBall() {
+	ntb := b.Tbm.Make()
+	if b.Tb != nil {
+		// Map of incremental files are inherited from previous Tar from the same bundle
+		// This design decision is based on Finish() function placement and TarWalker() behavior.
+		// This can be refactored so that map of incremented files would be in Bundle,
+		// but such refactoring will incur significant control flow and class responsibility changes.
+		ntb.SetFiles(b.Tb.GetFiles())
+	} else {
+		ntb.SetFiles(make(map[string]BackupFileDescription))
+	}
+	b.Tb = ntb
+}
+func (b *Bundle) GetIncrementBaseLsn() *uint64 { return b.IncrementFromLsn }
+func (b *Bundle) GetIncrementBaseFiles() BackupFileList { return b.IncrementFromFiles }
 
 // Sentinel is used to signal completion of a walked
 // directory.
@@ -84,20 +104,28 @@ type TarBall interface {
 	Size() int64
 	SetSize(int64)
 	Tw() *tar.Writer
+	SetFiles(files BackupFileList)
+	GetFiles() BackupFileList
 }
+
+type BackupFileList map[string]BackupFileDescription
 
 // S3TarBall represents a tar file that is
 // going to be uploaded to S3.
 type S3TarBall struct {
-	baseDir  string
-	trim     string
-	bkupName string
-	nop      bool
-	number   int
-	size     int64
-	w        io.WriteCloser
-	tw       *tar.Writer
-	tu       *TarUploader
+	baseDir          string
+	trim             string
+	bkupName         string
+	nop              bool
+	number           int
+	size             int64
+	w                io.WriteCloser
+	tw               *tar.Writer
+	tu               *TarUploader
+	Lsn              *uint64
+	IncrementFromLsn *uint64
+	IncrementFrom    string
+	Files            BackupFileList
 }
 
 // SetUp creates a new tar writer and starts upload to S3.
@@ -136,6 +164,35 @@ func (s *S3TarBall) CloseTar() error {
 	return nil
 }
 
+func (b *S3TarBall) SetFiles(files BackupFileList) {
+	b.Files = files
+}
+
+func (b *S3TarBall) GetFiles() BackupFileList {
+	return b.Files
+}
+
+type S3TarBallSentinelDto struct {
+	LSN              *uint64
+	IncrementFromLSN *uint64 `json:"IncrementFromLSN,omitempty"`
+	IncrementFrom    *string `json:"IncrementFrom,omitempty"`
+
+	Files BackupFileList
+}
+
+type BackupFileDescription struct {
+	IsIncremented bool // should never be both incremented and Skipped
+	IsSkipped       bool
+	MTime         time.Time
+}
+
+func (dto *S3TarBallSentinelDto) IsIncremental() bool {
+	if (dto.IncrementFrom != nil) != (dto.IncrementFromLSN != nil) {
+		panic("Inconsistent S3TarBallSentinelDto")
+	}
+	return dto.IncrementFrom != nil
+}
+
 // Finish writes an empty .json file and uploads it with the
 // the backup name. Finish will wait until all tar file parts
 // have been uploaded. The json file will only be uploaded
@@ -144,13 +201,25 @@ func (s *S3TarBall) CloseTar() error {
 func (s *S3TarBall) Finish() error {
 	var err error
 	tupl := s.tu
-	body := "{}"
+	dto := S3TarBallSentinelDto{
+		LSN:              s.Lsn,
+		IncrementFromLSN: s.IncrementFromLsn,
+	}
+	if s.IncrementFromLsn != nil {
+		dto.IncrementFrom = &s.IncrementFrom
+	}
+
+	dto.Files = s.GetFiles()
+	dtoBody, err := json.Marshal(&dto)
+	if err != nil {
+		return err
+	}
 	name := s.bkupName + "_backup_stop_sentinel.json"
 	path := tupl.server + "/basebackups_005/" + name
 	input := &s3manager.UploadInput{
 		Bucket: aws.String(tupl.bucket),
 		Key:    aws.String(path),
-		Body:   strings.NewReader(body),
+		Body:   bytes.NewReader(dtoBody),
 	}
 	tupl.Finish()
 

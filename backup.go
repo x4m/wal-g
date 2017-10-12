@@ -66,6 +66,8 @@ type Backup struct {
 	Js     *string
 }
 
+var LatestNotFound = errors.New("LATEST backup not found")
+
 // GetLatest sorts the backups by last modified time
 // and returns the latest backup key.
 func (b *Backup) GetLatest() (string, error) {
@@ -81,7 +83,13 @@ func (b *Backup) GetLatest() (string, error) {
 
 	}
 
-	sortTimes := make([]BackupTime, len(backups.Contents))
+	count := len(backups.Contents)
+
+	if count==0 {
+		return "", LatestNotFound
+	}
+
+	sortTimes := make([]BackupTime, count)
 
 	for i, ob := range backups.Contents {
 		key := *ob.Key
@@ -97,7 +105,7 @@ func (b *Backup) GetLatest() (string, error) {
 // Strips the backup key and returns it in its base form `base_...`.
 func stripNameBackup(key string) string {
 	all := strings.SplitAfter(key, "/")
-	name := strings.Split(all[2], "_backup")[0]
+	name := strings.Split(all[len(all)-1], "_backup")[0]
 	return name
 }
 
