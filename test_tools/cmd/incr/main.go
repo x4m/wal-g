@@ -12,6 +12,7 @@ import (
 	"strings"
 	"io"
 	"bytes"
+	"github.com/jackc/pgx"
 )
 
 func RemoveContents(dir string) error {
@@ -49,16 +50,37 @@ func main() {
 		log.Fatal(err);
 	}
 
+	Checkpoint()
 	WipeRestore()
 
 	Backup(tu, pre)
 	Bench()
-	time.Sleep(15000000000)
+	sync:=make(chan interface{})
+	go func(){
+		Bench()
+		sync<-struct{}{}
+	}()
+	Backup(tu, pre)
+	<-sync
+
+	Checkpoint()
+
 	Backup(tu, pre)
 
 	Fetch(pre)
 
 	Diff()
+}
+func Checkpoint() {
+	config, err := pgx.ParseEnvLibpq()
+	if err != nil {
+		log.Fatal(err);
+	}
+	conn, err := pgx.Connect(config)
+	if err != nil {
+		log.Fatal(err);
+	}
+	conn.Query("checkpoint;")
 }
 
 func WipeRestore() {
@@ -85,6 +107,7 @@ func Diff() {
 		log.Fatal("diff output contains difference")
 	}
 }
+
 func PrintDiff(rows []string) {
 	for _, r := range rows {
 		if !strings.Contains(r, "differ") {
@@ -149,7 +172,7 @@ func PagedFileCompare(filename1 string, filename2 string) {
 
 func Bench() {
 	var err error
-	out, err := exec.Command(pgbenchCommand, "postgres", "-T", "3").Output()
+	out, err := exec.Command(pgbenchCommand, "postgres", "-T", "20","-c","3","-j","3").Output()
 	fmt.Println(string(out))
 	if err != nil {
 		log.Fatal(err);
