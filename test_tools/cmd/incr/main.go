@@ -55,10 +55,10 @@ func main() {
 
 	Backup(tu, pre)
 	Bench()
-	sync:=make(chan interface{})
-	go func(){
+	sync := make(chan interface{})
+	go func() {
 		Bench()
-		sync<-struct{}{}
+		sync <- struct{}{}
 	}()
 	Backup(tu, pre)
 	<-sync
@@ -67,9 +67,9 @@ func main() {
 
 	Backup(tu, pre)
 
-	Fetch(pre)
+	lsn := Fetch(pre)
 
-	Diff()
+	Diff(lsn)
 }
 func Checkpoint() {
 	config, err := pgx.ParseEnvLibpq()
@@ -94,21 +94,21 @@ func WipeRestore() {
 	}
 }
 
-func Fetch(pre *walg.Prefix) {
-	walg.HandleIncrementalFetch("LATEST", pre, restoreDir, false)
+func Fetch(pre *walg.Prefix) uint64 {
+	return walg.HandleIncrementalFetch("LATEST", pre, restoreDir, false)
 }
 
-func Diff() {
+func Diff(lsn uint64) {
 	out, _ := exec.Command("diff", "-r", baseDir, restoreDir).Output()
 	outStr := string(out)
 	fmt.Println(outStr)
 	if strings.Contains(outStr, "differ") {
-		PrintDiff(strings.Split(outStr, "\n"))
+		PrintDiff(strings.Split(outStr, "\n"), lsn)
 		log.Fatal("diff output contains difference")
 	}
 }
 
-func PrintDiff(rows []string) {
+func PrintDiff(rows []string, lsn uint64) {
 	for _, r := range rows {
 		if !strings.Contains(r, "differ") {
 			continue
@@ -119,10 +119,10 @@ func PrintDiff(rows []string) {
 		v := strings.Split(r, " and ")
 		fmt.Println("File 1: " + v[0])
 		fmt.Println("File 2: " + v[1])
-		PagedFileCompare(v[0], v[1])
+		PagedFileCompare(v[0], v[1], lsn)
 	}
 }
-func PagedFileCompare(filename1 string, filename2 string) {
+func PagedFileCompare(filename1 string, filename2 string, lsn uint64) {
 	f1, _ := os.Open(filename1)
 	f2, _ := os.Open(filename2)
 
@@ -154,13 +154,20 @@ func PagedFileCompare(filename1 string, filename2 string) {
 			lsn2, valid2 := walg.ParsePageHeader(b2)
 			fmt.Printf("LSN2 %x valid %v\n", lsn2, valid2)
 
-			if lsn1!=lsn2 {
-				log.Panic("Increment pages did not restore page with different LSN")
+			if lsn1 != lsn2 {
+				if (lsn1 < lsn) {
+					log.Panic("Increment pages did not restore page with different LSN")
+				} else {
+					fmt.Println("LSNs differ, but origin is newer than backup")
+				}
 			}
 
-			fmt.Println(b1)
-			fmt.Println(b2)
+			//fmt.Println(b1)
+			//fmt.Println(b2)
 			for x := 0; x < int(walg.BlockSize); x++ {
+				//if b1[x]^b2[x] == 1 {
+				//	continue
+				//}
 				if b1[x] != b2[x] {
 					fmt.Printf("Different bytes %x and %x at %x\n", b1[x], b2[x], x)
 				}
@@ -172,7 +179,7 @@ func PagedFileCompare(filename1 string, filename2 string) {
 
 func Bench() {
 	var err error
-	out, err := exec.Command(pgbenchCommand, "postgres", "-T", "20","-c","3","-j","3").Output()
+	out, err := exec.Command(pgbenchCommand, "postgres", "-T", "20", "-c", "3", "-j", "3").Output()
 	fmt.Println(string(out))
 	if err != nil {
 		log.Fatal(err);

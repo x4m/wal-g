@@ -16,8 +16,8 @@ import (
 	"runtime/pprof"
 )
 
-func HandleIncrementalFetch(backupName string, pre *Prefix, dirArc string, mem bool) {
-	IncrementalFetchRecursion(backupName, pre, dirArc)
+func HandleIncrementalFetch(backupName string, pre *Prefix, dirArc string, mem bool) (lsn uint64) {
+	lsn = IncrementalFetchRecursion(backupName, pre, dirArc)
 
 	if mem {
 		f, err := os.Create("mem.prof")
@@ -28,10 +28,11 @@ func HandleIncrementalFetch(backupName string, pre *Prefix, dirArc string, mem b
 		pprof.WriteHeapProfile(f)
 		defer f.Close()
 	}
+	return
 }
 
 // This function composes Backup object and recursively searches for necessary base backup
-func IncrementalFetchRecursion(backupName string, pre *Prefix, dirArc string) {
+func IncrementalFetchRecursion(backupName string, pre *Prefix, dirArc string) uint64 {
 	var bk *Backup
 	// Check if BACKUPNAME exists and if it does extract to DIRARC.
 	if backupName != "LATEST" {
@@ -72,6 +73,10 @@ func IncrementalFetchRecursion(backupName string, pre *Prefix, dirArc string) {
 	}
 
 	UnwrapBackup(bk, dirArc, pre, dto)
+	if dto.LSN != nil {
+		return *dto.LSN
+	}
+	return 0
 }
 
 // Do the job of unpacking Backup object

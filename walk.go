@@ -96,7 +96,7 @@ func HandleTar(bundle TarBundle, path string, info os.FileInfo) error {
 			if ok && (time == bf.MTime) {
 				// File was not changed since previous backup
 
-				fmt.Println("Skiped by modification type")
+				fmt.Println("Skiped due to unchanged modification time")
 				tarBall.GetFiles()[hdr.Name] = BackupFileDescription{IsSkipped: true, IsIncremented: false, MTime: time}
 
 			} else {
