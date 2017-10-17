@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 	"io"
 	"encoding/json"
 	"io/ioutil"

@@ -2,7 +2,7 @@ package walg_test
 
 import (
 	"archive/tar"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 	"testing"
 )
 
