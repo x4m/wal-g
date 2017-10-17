@@ -23,7 +23,7 @@ var correctKeys = []string{"mockServer/base_backup/second.nop",
 	"mockServer/base_backup/third.nop"}
 
 // Mock out S3 client. Includes these methods:
-// ListObjectsV2(*ListObjectsV2Input)
+// ListObjects(*ListObjectsInput)
 // GetObject(*GetObjectInput)
 // HeadObject(*HeadObjectInput)
 type mockS3Client struct {
@@ -32,13 +32,13 @@ type mockS3Client struct {
 	err      bool
 }
 
-func (m *mockS3Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (m *mockS3Client) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	if m.err {
-		return nil, awserr.New("MockListObjects", "mock ListObjectsV2 errors", nil)
+		return nil, awserr.New("MockListObjects", "mock ListObjects errors", nil)
 	}
 
 	contents := fakeContents()
-	output := &s3.ListObjectsV2Output{
+	output := &s3.ListObjectsOutput{
 		Contents: contents,
 		Name:     input.Bucket,
 	}
