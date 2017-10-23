@@ -168,8 +168,8 @@ func PagedFileCompare(filename1 string, filename2 string, lsn uint64) {
 				//if b1[x]^b2[x] == 1 {
 				//	continue
 				//}
-				if b1[x] != b2[x] {
-					fmt.Printf("Different bytes %x and %x at %x\n", b1[x], b2[x], x)
+				if b1[x] != b2[x] && b1[x]^b2[x]!=1 {
+					fmt.Printf("bitdiff %x: Different bytes %x and %x at %x\n", b1[x]^b2[x],b1[x], b2[x], x)
 				}
 			}
 		}
