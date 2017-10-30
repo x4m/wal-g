@@ -53,7 +53,7 @@ func (fb *FileTarBall) CloseTar() error {
 }
 
 // Finish alerts that compression is complete.
-func (fb *FileTarBall) Finish() error {
+func (fb *FileTarBall) Finish(uploadStopSentinel bool) error {
 	fmt.Printf("Wrote %d compressed tar files to %s.\n", fb.number, fb.out)
 	return nil
 }
@@ -78,7 +78,7 @@ type NOPTarBall struct {
 
 func (n *NOPTarBall) SetUp(params ...string) { return }
 func (n *NOPTarBall) CloseTar() error        { return nil }
-func (n *NOPTarBall) Finish() error {
+func (n *NOPTarBall) Finish(uploadStopSentinel bool) error {
 	fmt.Printf("NOP: %d files.\n", n.number)
 	return nil
 }

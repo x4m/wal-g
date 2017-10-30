@@ -165,7 +165,7 @@ func TestUploadError(t *testing.T) {
 
 	tarBall := maker.Make()
 	tarBall.SetUp()
-	tarBall.Finish()
+	tarBall.Finish(true)
 	if tu.Success == true {
 		t.Errorf("upload: expected to fail to upload successfully")
 	}
@@ -176,7 +176,7 @@ func TestUploadError(t *testing.T) {
 
 	tarBall = maker.Make()
 	tarBall.SetUp()
-	tarBall.Finish()
+	tarBall.Finish(true)
 	if tu.Success == true {
 		t.Errorf("upload: expected to fail to upload successfully")
 	}

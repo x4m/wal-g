@@ -55,10 +55,12 @@ type TarBundle interface {
 // uploaded backups; in this case, pg_control is used as
 // the sentinel.
 type Bundle struct {
-	MinSize int64
-	Sen     *Sentinel
-	Tb      TarBall
-	Tbm     TarBallMaker
+	MinSize  int64
+	Sen      *Sentinel
+	Tb       TarBall
+	Tbm      TarBallMaker
+	Timeline uint32
+	Replica  bool
 }
 
 func (b *Bundle) GetTarBall() TarBall { return b.Tb }
@@ -75,7 +77,7 @@ type Sentinel struct {
 type TarBall interface {
 	SetUp(args ...string)
 	CloseTar() error
-	Finish() error
+	Finish(uploadStopSentinel bool) error
 	BaseDir() string
 	Trim() string
 	Nop() bool
@@ -139,7 +141,7 @@ func (s *S3TarBall) CloseTar() error {
 // have been uploaded. The json file will only be uploaded
 // if all other parts of the backup are present in S3.
 // an alert is given with the corresponding error.
-func (s *S3TarBall) Finish() error {
+func (s *S3TarBall) Finish(uploadStopSentinel bool) error {
 	var err error
 	tupl := s.tu
 	body := "{}"
@@ -153,7 +155,7 @@ func (s *S3TarBall) Finish() error {
 	tupl.Finish()
 
 	//If other parts are successful in uploading, upload json file.
-	if tupl.Success {
+	if tupl.Success && uploadStopSentinel {
 		tupl.wg.Add(1)
 		go func() {
 			defer tupl.wg.Done()
@@ -167,6 +169,8 @@ func (s *S3TarBall) Finish() error {
 		}()
 
 		tupl.Finish()
+	} else {
+		log.Printf("Sentinel was not uploaded %v", path)
 	}
 
 	if err == nil && tupl.Success {
