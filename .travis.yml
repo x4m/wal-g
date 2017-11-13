@@ -10,3 +10,6 @@ deploy:
   file: wal-g.linux-amd64.tar.gz
   on:
     repo: x4m/wal-g
+branches:
+  only:
+    - master
