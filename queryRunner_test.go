@@ -3,7 +3,7 @@ package walg_test
 import (
 	"testing"
 
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 )
 
 // Tests building start backup query
