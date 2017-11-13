@@ -83,13 +83,13 @@ func (folder *S3Folder) GetPath() string {
 }
 
 func (folder *S3Folder) ListFolder() (objects []StorageObject, subFolders []StorageFolder, err error) {
-	s3Objects := &s3.ListObjectsV2Input{
+	s3Objects := &s3.ListObjectsInput{
 		Bucket:    folder.Bucket,
 		Prefix:    aws.String(folder.Path),
 		Delimiter: aws.String("/"),
 	}
 
-	err = folder.S3API.ListObjectsV2Pages(s3Objects, func(files *s3.ListObjectsV2Output, lastPage bool) bool {
+	err = folder.S3API.ListObjectsPages(s3Objects, func(files *s3.ListObjectsOutput, lastPage bool) bool {
 		for _, prefix := range files.CommonPrefixes {
 			subFolders = append(subFolders, NewS3Folder(folder.uploader, folder.S3API, *folder.Bucket, *prefix.Prefix))
 		}
