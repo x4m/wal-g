@@ -4,9 +4,9 @@ import (
 	"archive/tar"
 	"testing"
 
-	"github.com/wal-g/wal-g"
 	"os"
 	"time"
+	"github.com/x4m/wal-g"
 )
 
 // Tests S3 get and set methods.

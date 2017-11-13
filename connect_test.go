@@ -1,8 +1,8 @@
 package walg_test
 
 import (
-	"github.com/wal-g/wal-g"
 	"strings"
+	"github.com/x4m/wal-g"
 	"testing"
 )
 

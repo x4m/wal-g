@@ -1,6 +1,6 @@
 # WAL-G
-[![Build Status](https://travis-ci.org/wal-g/wal-g.svg?branch=master)](https://travis-ci.org/wal-g/wal-g)
-[![Go Report Card](https://goreportcard.com/badge/github.com/wal-g/wal-g)](https://goreportcard.com/report/github.com/wal-g/wal-g)
+[![Build Status](https://travis-ci.org/x4m/wal-g.svg?branch=master)](https://travis-ci.org/wal-g/wal-g)
+[![Go Report Card](https://goreportcard.com/badge/github.com/x4m/wal-g)](https://goreportcard.com/report/github.com/x4m/wal-g)
 
 WAL-G is an archival restoration tool for Postgres.
 
@@ -19,7 +19,7 @@ WAL-G is the successor of WAL-E with a number of key differences. WAL-G uses LZ4
 
 Installation
 ----------
-A precompiled binary for Linux AMD 64 of the latest version of WAL-G can be obtained under the [Releases tab](https://github.com/wal-g/wal-g/releases).
+A precompiled binary for Linux AMD 64 of the latest version of WAL-G can be obtained under the [Releases tab](https://github.com/x4m/wal-g/releases).
 
 To decompress the binary, use:
 
@@ -213,7 +213,7 @@ Development
 To compile and build the binary:
 
 ```
-go get github.com/wal-g/wal-g
+go get github.com/x4m/wal-g
 make all
 ```
 Users can also install WAL-G by using `make install`. Specifying the GOBIN environment variable before installing allows the user to specify the installation location. On default, `make install` puts the compiled binary in `go/bin`.
@@ -247,7 +247,6 @@ See also the list of [contributors](CONTRIBUTORS) who participated in this proje
 
 License
 -------
-
 This project is licensed under the Apache License, Version 2.0, but the lzo support is licensed under GPL 3.0+. Please refer to the [LICENSE.md](LICENSE.md) file for more details.
 
 Acknowledgements

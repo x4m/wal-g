@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/pierrec/lz4"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 )
 
 // FileTarBall represents a tarball that is
