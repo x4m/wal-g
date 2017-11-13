@@ -211,7 +211,6 @@ See also the list of [contributors](CONTRIBUTORS) who participated in this proje
 
 License
 -------
-
 This project is licensed under the Apache License, Version 2.0, but the lzo support is licensed under GPL 3.0+. Please refer to the [LICENSE.md](LICENSE.md) file for more details.
 
 Acknowledgements
