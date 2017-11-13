@@ -1,7 +1,7 @@
 package testtools
 
 import (
-	"github.com/wal-g/wal-g/internal"
+	"github.com/x4m/wal-g/internal"
 	"io"
 )
 

@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/x4m/wal-g"
+	"github.com/x4m/wal-g/testtools"
 	"io"
 	"io/ioutil"
 	"testing"

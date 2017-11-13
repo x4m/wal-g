@@ -2,7 +2,7 @@ package internal
 
 import (
 	"bytes"
-	"github.com/wal-g/wal-g/internal/walparser"
+	"github.com/x4m/wal-g/internal/walparser"
 	"io"
 )
 

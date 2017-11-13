@@ -5,15 +5,15 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g/internal"
-	"github.com/wal-g/wal-g/testtools"
-	"io"
-	"io/ioutil"
+	"testing"
 	"os"
 	"path/filepath"
-	"strconv"
+	"io/ioutil"
+	"io"
+	"github.com/x4m/wal-g/internal"
 	"sync"
-	"testing"
+	"github.com/x4m/wal-g/testtools"
+	"strconv"
 )
 
 const BUFSIZE = 4 * 1024

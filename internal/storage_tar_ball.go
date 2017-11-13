@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/internal/tracelog"
+	"github.com/x4m/wal-g/internal/tracelog"
 	"io"
 )
 

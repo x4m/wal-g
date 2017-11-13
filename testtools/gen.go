@@ -2,10 +2,10 @@ package testtools
 
 import (
 	"archive/tar"
-	"io"
 	"math/rand"
 	"strconv"
 	"sync/atomic"
+	"io"
 )
 
 var counter int32

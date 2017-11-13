@@ -3,7 +3,7 @@ package test
 import (
 	"bytes"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g/internal"
+	"github.com/x4m/wal-g/internal"
 	"io"
 	"io/ioutil"
 	"math/rand"

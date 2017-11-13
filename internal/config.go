@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-yaml/yaml"
-	"github.com/wal-g/wal-g/internal/tracelog"
+	"github.com/x4m/wal-g/internal/tracelog"
 )
 
 var (

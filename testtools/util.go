@@ -3,7 +3,7 @@ package testtools
 import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g/internal"
+	"github.com/x4m/wal-g/internal"
 	"io"
 	"testing"
 )

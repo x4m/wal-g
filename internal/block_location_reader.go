@@ -2,8 +2,8 @@ package internal
 
 import (
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/internal/walparser"
-	"github.com/wal-g/wal-g/internal/walparser/parsingutil"
+	"github.com/x4m/wal-g/internal/walparser"
+	"github.com/x4m/wal-g/internal/walparser/parsingutil"
 	"io"
 )
 

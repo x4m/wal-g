@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g/internal"
-	"github.com/wal-g/wal-g/internal/walparser"
+	"github.com/x4m/wal-g/internal"
+	"github.com/x4m/wal-g/internal/walparser"
 	"io"
 	"testing"
 )

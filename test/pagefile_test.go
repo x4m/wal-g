@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g/internal"
+	"github.com/x4m/wal-g/internal"
 	"io"
 	"io/ioutil"
 	"log"

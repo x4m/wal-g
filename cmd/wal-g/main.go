@@ -3,7 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/wal-g/wal-g/internal"
+
+	"github.com/x4m/wal-g/internal"
 	"log"
 	"os"
 	"runtime/pprof"

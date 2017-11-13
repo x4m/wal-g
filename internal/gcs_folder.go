@@ -9,7 +9,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/internal/tracelog"
+	"github.com/x4m/wal-g/internal/tracelog"
 	"google.golang.org/api/iterator"
 )
 

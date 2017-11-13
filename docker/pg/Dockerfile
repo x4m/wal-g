@@ -1,6 +1,6 @@
 FROM wal-g/golang:latest as build
 
-WORKDIR /go/src/github.com/wal-g/wal-g
+WORKDIR /go/src/github.com/x4m/wal-g
 
 COPY vendor/ vendor/
 COPY internal/ internal/
@@ -11,7 +11,7 @@ RUN cd cmd/wal-g && \
 
 FROM wal-g/ubuntu:latest
 
-COPY --from=build /go/src/github.com/wal-g/wal-g/cmd/wal-g/wal-g /usr/bin
+COPY --from=build /go/src/github.com/x4m/wal-g/cmd/wal-g/wal-g /usr/bin
 
 COPY docker/pg/scripts/ /tmp
 

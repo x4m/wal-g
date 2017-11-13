@@ -3,7 +3,7 @@ package testtools
 import (
 	"bytes"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/internal"
+	"github.com/x4m/wal-g/internal"
 	"io"
 	"io/ioutil"
 	"path/filepath"

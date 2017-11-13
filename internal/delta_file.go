@@ -3,8 +3,8 @@ package internal
 import (
 	"fmt"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/internal/tracelog"
-	"github.com/wal-g/wal-g/internal/walparser"
+	"github.com/x4m/wal-g/internal/tracelog"
+	"github.com/x4m/wal-g/internal/walparser"
 	"io"
 )
 

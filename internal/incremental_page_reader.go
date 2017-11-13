@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/RoaringBitmap/roaring"
-	"github.com/wal-g/wal-g/internal/tracelog"
+	"github.com/x4m/wal-g/internal/tracelog"
 	"io"
 )
 

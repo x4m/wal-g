@@ -19,13 +19,13 @@ fmt: $(CMD_FILES) $(PKG_FILES) $(TEST_FILES)
 lint: $(CMD_FILES) $(PKG_FILES) $(TEST_FILES)
 	go list ./... | grep -Ev 'vendor|submodules|tmp' | xargs golint
 
-all: build
+all: deps build
 
 deps:
 	git submodule update --init
 	dep ensure
 
-install:
+install: deps
 	(cd cmd/wal-g && go install)
 
 clean:
