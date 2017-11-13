@@ -3,7 +3,7 @@ package walg
 import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/walparser"
+	"github.com/x4m/wal-g/walparser"
 	"os"
 	"path"
 	"strconv"

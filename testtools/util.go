@@ -3,7 +3,7 @@ package testtools
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 	"io"
 	"os"
 	"testing"

@@ -1,7 +1,7 @@
 package walg
 
 import (
-	"github.com/wal-g/wal-g/walparser/parsingutil"
+	"github.com/x4m/wal-g/walparser/parsingutil"
 	"io"
 )
 

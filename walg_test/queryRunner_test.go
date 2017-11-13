@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 )
 
 // Tests building start backup query

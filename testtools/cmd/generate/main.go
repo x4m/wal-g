@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/wal-g/wal-g/testtools"
+	"github.com/x4m/wal-g/testtools"
 	"net/http"
 	"os"
 )

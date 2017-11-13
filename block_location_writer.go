@@ -2,7 +2,7 @@ package walg
 
 import (
 	"encoding/binary"
-	"github.com/wal-g/wal-g/walparser"
+	"github.com/x4m/wal-g/walparser"
 	"io"
 )
 

@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export DH_OPTIONS
+export DH_GOPKG := github.com/x4m/wal-g
+
+override_dh_builddeb:
+	dh_builddeb -- -z9 -Zxz -Snone
+
+override_dh_auto_install:
+	DH_INTERNAL_OPTIONS='' dh_auto_install
+	dh_auto_install
+
+%:
+	dh $@ --parallel --buildsystem=golang --with=golang

@@ -2,7 +2,7 @@ package testtools
 
 import (
 	"bytes"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 	"io"
 	"io/ioutil"
 )
