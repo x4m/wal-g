@@ -23,7 +23,7 @@ var correctKeys = []string{"mockServer/base_backup/second.nop",
 	"mockServer/base_backup/third.nop"}
 
 // Mock out S3 client. Includes these methods:
-// ListObjectsV2(*ListObjectsV2Input)
+// ListObjects(*ListObjectsInput)
 // GetObject(*GetObjectInput)
 // HeadObject(*HeadObjectInput)
 type mockS3Client struct {
@@ -39,6 +39,21 @@ func (m *mockS3Client) ListObjectsV2Pages(input *s3.ListObjectsV2Input, callback
 
 	contents := fakeContents()
 	output := &s3.ListObjectsV2Output{
+		Contents: contents,
+		Name:     input.Bucket,
+	}
+
+	callback(output, true)
+	return nil
+}
+
+func (m *mockS3Client) ListObjectsPages(input *s3.ListObjectsInput, callback func(*s3.ListObjectsOutput, bool) bool) error {
+	if m.err {
+		return awserr.New("MockListObjects", "mock ListObjects errors", nil)
+	}
+
+	contents := fakeContents()
+	output := &s3.ListObjectsOutput{
 		Contents: contents,
 		Name:     input.Bucket,
 	}
@@ -370,7 +385,7 @@ func TestGetBackupTimeSlices(t *testing.T) {
 		{Key: &second, LastModified: &secondTime},
 		{Key: &third, LastModified: &thirdTime},
 	}
-	objectsFromS3 := &s3.ListObjectsV2Output{Contents: c}
+	objectsFromS3 := &s3.ListObjectsOutput{Contents: c}
 
 	checkSortingPermutationResult(objectsFromS3, t) //123
 	c[0], c[1] = c[1], c[0]
@@ -386,7 +401,7 @@ func TestGetBackupTimeSlices(t *testing.T) {
 
 }
 
-func checkSortingPermutationResult(objectsFromS3 *s3.ListObjectsV2Output, t *testing.T) {
+func checkSortingPermutationResult(objectsFromS3 *s3.ListObjectsOutput, t *testing.T) {
 	//t.Log(objectsFromS3)
 	slice := walg.GetBackupTimeSlices(objectsFromS3.Contents)
 	if slice[0].Name != "backup01" {
