@@ -3,7 +3,7 @@ package walg
 import (
 	"encoding/json"
 	"github.com/go-yaml/yaml"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 	"io/ioutil"
 	"os"
 	"os/user"

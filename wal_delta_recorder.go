@@ -1,7 +1,7 @@
 package walg
 
 import (
-	"github.com/wal-g/wal-g/walparser"
+	"github.com/x4m/wal-g/walparser"
 )
 
 var TerminalLocation = *walparser.NewBlockLocation(0, 0, 0, 0)

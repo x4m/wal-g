@@ -3,7 +3,7 @@ package walparser
 import (
 	"github.com/pkg/errors"
 	"fmt"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 )
 
 const (

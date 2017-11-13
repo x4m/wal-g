@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/walparser/parsingutil"
+	"github.com/x4m/wal-g/walparser/parsingutil"
 	"io"
 	"io/ioutil"
 	"fmt"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 	"io"
 	"io/ioutil"
 	"os"

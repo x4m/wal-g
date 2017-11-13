@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 	"io/ioutil"
 )
 

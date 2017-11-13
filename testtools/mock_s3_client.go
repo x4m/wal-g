@@ -5,14 +5,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 	"io/ioutil"
 	"strings"
 	"time"
 )
 
 // Mock out S3 client. Includes these methods:
-// ListObjects(*ListObjectsV2Input)
+// ListObjects(*ListObjectsInput)
 // GetObject(*GetObjectInput)
 // HeadObject(*HeadObjectInput)
 type mockS3Client struct {
@@ -25,13 +25,13 @@ func NewMockS3Client(err, notFound bool) *mockS3Client {
 	return &mockS3Client{err: err, notFound: notFound}
 }
 
-func (client *mockS3Client) ListObjectsV2Pages(input *s3.ListObjectsV2Input, callback func(*s3.ListObjectsV2Output, bool) bool) error {
+func (client *mockS3Client) ListObjectsPages(input *s3.ListObjectsInput, callback func(*s3.ListObjectsOutput, bool) bool) error {
 	if client.err {
 		return awserr.New("MockListObjects", "mock ListObjects errors", nil)
 	}
 
 	contents := fakeContents()
-	output := &s3.ListObjectsV2Output{
+	output := &s3.ListObjectsOutput{
 		Contents: contents,
 		Name:     input.Bucket,
 	}

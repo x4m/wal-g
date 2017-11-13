@@ -4,7 +4,7 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"fmt"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 )
 
 type NotEnoughDataToShrinkError struct {

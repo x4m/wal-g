@@ -6,8 +6,8 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g"
-	"github.com/wal-g/wal-g/testtools"
+	"github.com/x4m/wal-g"
+	"github.com/x4m/wal-g/testtools"
 )
 
 // Sets WAL-G needed environment variables to empty strings.

@@ -2,7 +2,7 @@ package walg
 
 import (
 	"bytes"
-	"github.com/wal-g/wal-g/walparser"
+	"github.com/x4m/wal-g/walparser"
 	"io"
 )
 

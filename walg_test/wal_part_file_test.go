@@ -3,8 +3,8 @@ package walg_test
 import (
 	"bytes"
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/wal-g"
-	"github.com/wal-g/wal-g/walparser"
+	"github.com/x4m/wal-g"
+	"github.com/x4m/wal-g/walparser"
 	"testing"
 )
 

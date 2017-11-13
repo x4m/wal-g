@@ -3,7 +3,7 @@ package walparser
 import (
 	"fmt"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 )
 
 type InvalidRecordBlockIdError struct {

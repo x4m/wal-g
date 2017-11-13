@@ -1,7 +1,7 @@
 package walg
 
 import (
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 	"io/ioutil"
 	"os"
 )

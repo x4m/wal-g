@@ -3,7 +3,7 @@ package walg
 import (
 	"fmt"
 	"github.com/pkg/errors"
-	"github.com/wal-g/wal-g/tracelog"
+	"github.com/x4m/wal-g/tracelog"
 )
 
 // UnsetEnvVarError is used to indicate required environment
