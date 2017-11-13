@@ -10,5 +10,5 @@ deploy:
   skip_cleanup: true
   file: wal-g.linux-amd64.tar.gz
   on:
-    repo: wal-g/wal-g
+    repo: x4m/wal-g
     tags: true
