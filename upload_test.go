@@ -1,7 +1,7 @@
 package walg_test
 
 import (
-	"github.com/wal-g/wal-g"
+	"github.com/x4m/wal-g"
 	"os"
 	"testing"
 )
