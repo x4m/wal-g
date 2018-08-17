@@ -496,7 +496,7 @@ func (bundle *Bundle) packFileIntoTar(path string, info os.FileInfo, fileInfoHea
 			if err != nil {
 				return errors.Wrapf(err, "packFileIntoTar: failed reading incremental file '%s'\n", path)
 			}
-			fileReader = &ReadCascadeCloser{ &io.LimitedReader{
+			fileReader = &ReadCascadeCloser{&io.LimitedReader{
 				R: io.MultiReader(fileReader, &ZeroReader{}),
 				N: int64(fileInfoHeader.Size),
 			}, fileReader}

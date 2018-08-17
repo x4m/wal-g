@@ -71,7 +71,7 @@ func (tarBall *S3TarBall) startUpload(name string, crypter Crypter) io.WriteClos
 	uploader := tarBall.uploader
 
 	path := GetBackupPath(uploader.uploadingFolder) + tarBall.backupName + "/tar_partitions/" + name
-	input := uploader.CreateUploadInput(path, NewNetworkLimitReader(pipeReader))
+	input := uploader.CreateUploadInput(path, NewExtractionCheckingReader(NewNetworkLimitReader(pipeReader)))
 
 	fmt.Printf("Starting part %d ...\n", tarBall.partCount)
 
