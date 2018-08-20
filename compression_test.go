@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+	"sync"
 )
 
 func FindDecompressor(compressorFileExtension string) Decompressor {
@@ -160,4 +161,60 @@ func generateFile(filePath string, size int) error {
 	randomReader := NewBiasedRandomReader(size)
 	io.Copy(file, randomReader)
 	return nil
+}
+
+func TestZstd(t *testing.T) {
+	seed := int64(1)
+	wc := &sync.WaitGroup{}
+	for i := 0; i < 8; i++ {
+		wc.Add(1)
+		seed = int64(i)
+		go func() {
+			testZstdFlow(seed, t)
+			wc.Done()
+		}()
+	}
+	wc.Wait()
+}
+func testZstdFlow(seed int64, t *testing.T) {
+	size := 1024 * 1024 * 1024 * 100
+	source := rand.New(rand.NewSource(seed))
+	reference := rand.New(rand.NewSource(seed))
+	compressor := ZstdCompressor{}
+	decompressor := ZstdDecompressor{}
+	pr, pw := io.Pipe()
+	go func() {
+		entrance := compressor.NewWriter(pw)
+		written := 0
+		buf := make([]byte, 1024*64)
+		for written < size {
+			n, err := io.ReadFull(source, buf)
+			if err != nil {
+				panic(err)
+			}
+			entrance.Write(buf[:n])
+			written += n
+		}
+		entrance.Close()
+		pw.Close()
+	}()
+	pr2, pw2 := io.Pipe()
+	go decompressor.Decompress(pw2, pr)
+	written := 0
+	buf1 := make([]byte, 1024*64)
+	buf2 := make([]byte, 1024*64)
+	for written < size {
+		n, err := io.ReadFull(pr2, buf1)
+		if err != nil {
+			panic(err)
+		}
+		_, err = io.ReadFull(reference, buf2)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(buf1, buf2) {
+			t.Error("Error at position ", written)
+		}
+		written += n
+	}
 }
