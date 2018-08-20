@@ -31,17 +31,26 @@ func TimeTrack(start time.Time, name string) {
 
 func NewMockTarUploader(apiMultiErr, apiErr bool) *walg.Uploader {
 	return walg.NewUploader(
-		NewMockS3Uploader(apiMultiErr, apiErr, nil),
+		NewMockS3Uploader(apiMultiErr, apiErr, nil, 1 << 30),
 		&MockCompressor{},
 		walg.NewS3Folder(NewMockS3Client(true, true), "bucket/", "server"),
 		false,
 	)
 }
 
-func NewStoringMockTarUploader(apiMultiErr, apiErr bool, storage MockStorage) *walg.Uploader {
+func NewStoringMockTarUploader(storage MockStorage) *walg.Uploader {
 	return walg.NewUploader(
-		NewMockS3Uploader(apiMultiErr, apiErr, storage),
+		NewMockS3Uploader(false, false, storage, 1 << 30),
 		&MockCompressor{},
+		walg.NewS3Folder(nil, "bucket/", "server"),
+		false,
+	)
+}
+
+func NewStoringMockZstdTarUploader(storage MockStorage) *walg.Uploader {
+	return walg.NewUploader(
+		NewMockS3Uploader(false, false, storage, 1 << 30),
+		walg.Compressors[walg.Lz4AlgorithmName],
 		walg.NewS3Folder(nil, "bucket/", "server"),
 		false,
 	)

@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"testing"
 	"time"
+	"encoding/json"
+	"path/filepath"
 )
 
 var correctKeys = []string{"mockServer/base_backup/second.nop",
@@ -173,4 +175,19 @@ func checkSortingPermutationResult(objectsFromS3 *s3.ListObjectsOutput, t *testi
 	assert.Equalf(t, "backup01", slice[0].Name, "Sorting does not work correctly")
 	assert.Equalf(t, "backup02", slice[1].Name, "Sorting does not work correctly")
 	assert.Equalf(t, "backup03", slice[2].Name, "Sorting does not work correctly")
+}
+
+func TestHandleFSObject(t *testing.T) {
+	previousBackupSentinelData, err := ioutil.ReadFile("testdata/base_000000010000003800000061_backup_stop_sentinel.json")
+	assert.NoError(t, err)
+	var previousBackupSentinel walg.S3TarBallSentinelDto
+	err = json.Unmarshal(previousBackupSentinelData, &previousBackupSentinel)
+	assert.NoError(t, err)
+	bundle := walg.NewBundle("testdata/data", previousBackupSentinel.BackupStartLSN, previousBackupSentinel.Files)
+	bundle.TarBallMaker = walg.NewS3TarBallMaker("base_000000010000003400000027_D_00000001000000280000006F", testtools.NewStoringMockZstdTarUploader(nil))
+	bundle.StartQueue()
+	err = filepath.Walk("testdata/data", bundle.HandleWalkedFSObject)
+	assert.NoError(t, err)
+	err = bundle.FinishQueue()
+	assert.NoError(t, err)
 }

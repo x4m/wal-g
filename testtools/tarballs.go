@@ -22,6 +22,10 @@ type FileTarBall struct {
 	tarWriter   *tar.Writer
 }
 
+func (tarBall *FileTarBall) WriteHeader(fileInfoHeader *tar.Header) error {
+	return tarBall.tarWriter.WriteHeader(fileInfoHeader)
+}
+
 // SetUp creates a new LZ4 writer, tar writer and file for
 // writing bundled compressed bytes to.
 func (tarBall *FileTarBall) SetUp(crypter walg.Crypter, names ...string) {
@@ -85,6 +89,10 @@ type NOPTarBall struct {
 	tarWriter *tar.Writer
 }
 
+func (tarBall *NOPTarBall) WriteHeader(fileInfoHeader *tar.Header) error {
+	return tarBall.tarWriter.WriteHeader(fileInfoHeader)
+}
+
 func (tarBall *NOPTarBall) SetUp(crypter walg.Crypter, params ...string) {}
 func (tarBall *NOPTarBall) CloseTar() error                              { return nil }
 func (tarBall *NOPTarBall) Finish(sentinelDto *walg.S3TarBallSentinelDto) error {
@@ -104,6 +112,10 @@ type BufferTarBall struct {
 	size       int64
 	underlying *bytes.Buffer
 	tarWriter  *tar.Writer
+}
+
+func (tarBall *BufferTarBall) WriteHeader(fileInfoHeader *tar.Header) error {
+	return tarBall.tarWriter.WriteHeader(fileInfoHeader)
 }
 
 func (tarBall *BufferTarBall) SetUp(crypter walg.Crypter, args ...string) {

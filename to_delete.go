@@ -5,6 +5,7 @@ import (
 	"archive/tar"
 	"fmt"
 	"log"
+	"os"
 )
 
 // NOPTarInterpreter mocks a tar extractor.
@@ -40,6 +41,10 @@ func (readerMaker *UnderlyingReaderMaker) Reader() (io.ReadCloser, error) {
 }
 
 func (readerMaker *UnderlyingReaderMaker) Path() string {
-	return "some_path.zst"
+	compressionMethod := os.Getenv("WALG_COMPRESSION_METHOD")
+	if compressionMethod == "" {
+		compressionMethod = Lz4AlgorithmName
+	}
+	return "some_path." + Compressors[compressionMethod].FileExtension()
 }
 

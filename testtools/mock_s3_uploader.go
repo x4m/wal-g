@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
 	"io"
 	"io/ioutil"
+	"time"
 )
 
 type mockMultiFailureError struct {
@@ -35,10 +36,11 @@ type mockS3Uploader struct {
 	multiErr bool
 	err      bool
 	storage  MockStorage
+	writerLimit int
 }
 
-func NewMockS3Uploader(multiErr, err bool, storage MockStorage) *mockS3Uploader {
-	return &mockS3Uploader{multiErr: multiErr, err: err, storage: storage}
+func NewMockS3Uploader(multiErr, err bool, storage MockStorage, writerLimit int) *mockS3Uploader {
+	return &mockS3Uploader{multiErr: multiErr, err: err, storage: storage, writerLimit: writerLimit}
 }
 
 func (uploader *mockS3Uploader) Upload(input *s3manager.UploadInput, f ...func(*s3manager.Uploader)) (*s3manager.UploadOutput, error) {
@@ -64,7 +66,7 @@ func (uploader *mockS3Uploader) Upload(input *s3manager.UploadInput, f ...func(*
 		_, err = io.Copy(ioutil.Discard, input.Body)
 	} else {
 		var buf bytes.Buffer
-		_, err = io.Copy(&buf, input.Body)
+		_, err = io.Copy(NewLimitedWriter(uploader.writerLimit, &buf), input.Body)
 		uploader.storage[*input.Bucket+*input.Key] = buf
 	}
 	if err != nil {
@@ -73,3 +75,39 @@ func (uploader *mockS3Uploader) Upload(input *s3manager.UploadInput, f ...func(*
 
 	return output, nil
 }
+
+type LimitedWriter struct {
+	limit int
+	untilLimit int
+	underlying io.Writer
+}
+
+func NewLimitedWriter(limit int, underlying io.Writer) *LimitedWriter {
+	return &LimitedWriter{limit, limit, underlying}
+}
+
+func (writer *LimitedWriter) Write(p []byte) (n int, err error) {
+	for len(p) > 0 {
+		toWrite := min(writer.untilLimit, len(p))
+		written, err := writer.underlying.Write(p[:toWrite])
+		writer.untilLimit -= written
+		n += written
+		if err != nil {
+			return n, err
+		}
+		p = p[toWrite:]
+		if writer.untilLimit == 0 {
+			time.Sleep(time.Duration(100000000))
+			writer.untilLimit = writer.limit
+		}
+	}
+	return
+}
+
+func min(a, b int) int {
+	if a > b {
+		return b
+	}
+	return a
+}
+

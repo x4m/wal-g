@@ -309,7 +309,7 @@ func (bundle *Bundle) handleTar(path string, info os.FileInfo) error {
 		}()
 	} else {
 		defer bundle.EnqueueBack(tarBall)
-		err = tarBall.TarWriter().WriteHeader(fileInfoHeader)
+		err = tarBall.WriteHeader(fileInfoHeader)
 		if err != nil {
 			return errors.Wrap(err, "handleTar: failed to write header")
 		}
@@ -342,7 +342,7 @@ func (bundle *Bundle) UploadPgControl(compressorFileExtension string) error {
 	fileInfoHeader.Name = bundle.GetFileRelPath(path)
 	fmt.Println(fileInfoHeader.Name)
 
-	err = tarWriter.WriteHeader(fileInfoHeader) // TODO : what happens in case of irregular pg_control?
+	err = tarBall.WriteHeader(fileInfoHeader) // TODO : what happens in case of irregular pg_control? - bugs with tar extraction...
 	if err != nil {
 		return errors.Wrap(err, "UploadPgControl: failed to write header")
 	}

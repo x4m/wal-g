@@ -15,11 +15,12 @@ type TarBall interface {
 	AddSize(int64)
 	TarWriter() *tar.Writer
 	AwaitUploads()
+	WriteHeader(fileInfoHeader *tar.Header) error
 }
 
 func PackFileTo(tarBall TarBall, fileInfoHeader *tar.Header, fileContent io.Reader) (fileSize int64, err error) {
 	tarWriter := tarBall.TarWriter()
-	err = tarWriter.WriteHeader(fileInfoHeader)
+	err = tarBall.WriteHeader(fileInfoHeader)
 	if err != nil {
 		return 0, errors.Wrap(err, "PackFileTo: failed to write header")
 	}

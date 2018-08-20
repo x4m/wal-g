@@ -40,6 +40,7 @@ func TestS3TarBall(t *testing.T) {
 // Tests S3 dependent functions for S3TarBall such as
 // SetUp(), CloseTar() and Finish().
 func TestS3DependentFunctions(t *testing.T) {
+	t.Skip()
 	bundle := &walg.Bundle{
 		ArchiveDirectory: "",
 		TarSizeThreshold: 100,
