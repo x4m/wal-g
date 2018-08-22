@@ -111,7 +111,7 @@ func (tarBall *S3TarBall) AddSize(i int64) { tarBall.size += i }
 func (tarBall *S3TarBall) TarWriter() *tar.Writer { return tarBall.tarWriter }
 
 func (tarBall *S3TarBall) WriteHeader(fileInfoHeader *tar.Header) error {
-	log.Printf("Header: %d %v", tarBall.partNumber, *fileInfoHeader)
+	fmt.Printf("Header: %d %v\n", tarBall.partNumber, *fileInfoHeader)
 	err := tarBall.tarWriter.WriteHeader(fileInfoHeader)
 	if err != nil {
 		return errors.Wrap(err, "Failed to write tar header")

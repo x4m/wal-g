@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"github.com/pkg/errors"
 	"io"
+	"fmt"
 )
 
 // A TarBall represents one tar file.
@@ -29,6 +30,7 @@ func PackFileTo(tarBall TarBall, fileInfoHeader *tar.Header, fileContent io.Read
 	if err != nil {
 		return fileSize, errors.Wrap(err, "PackFileTo: copy failed")
 	}
+	fmt.Println("Done ",fileInfoHeader.Name)
 
 	tarBall.AddSize(fileInfoHeader.Size)
 	return fileSize, err

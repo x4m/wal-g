@@ -6,12 +6,33 @@ import (
 )
 
 type ZstdReaderFromWriter struct {
-	zstd.Writer
+	w  zstd.Writer
+	pw *io.PipeWriter
 }
 
 func NewZstdReaderFromWriter(dst io.Writer) *ZstdReaderFromWriter {
 	zstdWriter := zstd.NewWriterLevel(dst, 3)
-	return &ZstdReaderFromWriter{Writer: *zstdWriter}
+
+	//pipeReader, pipeWriter := io.Pipe()
+	//
+	//go func() {
+	//	err := extractOne(&NOPTarInterpreter{"PreZstd"}, pipeReader)
+	//	if err != nil {
+	//		log.Printf("failed to write tar correctly!!!!")
+	//		panic(err)
+	//	}
+	//	pipeReader.Close()
+	//}()
+	return &ZstdReaderFromWriter{w: *zstdWriter, pw: nil}
+}
+
+func (writer *ZstdReaderFromWriter) Write(p []byte) (n int, err error) {
+	//writer.pw.Write(p)
+	return writer.w.Write(p)
+}
+
+func (writer *ZstdReaderFromWriter) Close() (err error) {
+	return writer.w.Close()
 }
 
 func (writer *ZstdReaderFromWriter) ReadFrom(reader io.Reader) (n int64, err error) {

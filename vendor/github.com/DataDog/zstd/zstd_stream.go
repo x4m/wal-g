@@ -89,6 +89,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 	}
 	// Check if dstBuffer is enough
 	if len(w.dstBuffer) < CompressBound(len(p)) {
+		fmt.Println("Extend ", len(w.dstBuffer)," to ",CompressBound(len(p)))
 		w.dstBuffer = make([]byte, CompressBound(len(p)))
 	}
 
@@ -106,6 +107,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 
 	// Write to underlying buffer
 	_, err := w.underlyingWriter.Write(w.dstBuffer[:written])
+	fmt.Println(len(p)," ",written)
 
 	// Same behaviour as zlib, we can't know how much data we wrote, only
 	// if there was an error
