@@ -6,19 +6,19 @@ go:
   - 1.10.x
 matrix:
   include:
-    - env: GOTAGS=
-    - env: GOTAGS=lzo
+    - env: GOTAGS= BINSUFFIX=
+    - env: GOTAGS=lzo BINSUFFIX=.lzo
       addons:
         apt:
           packages: liblzo2-dev
 before_deploy:
-  - tar -zcf wal-g.linux-amd64$GOTAGS.tar.gz -C cmd/wal-g/ wal-g
+  - tar -zcf wal-g.linux-amd64$BINSUFFIX.tar.gz -C cmd/wal-g/ wal-g
 deploy:
   provider: releases
   api_key:
     secure: Lw98wz4bP2oyR8UVIaG6eQWUgvpKFvGoisuUgYC6jRHG4AOy4xXFuqIVvQrZDtKDx8RsGkvD3TQQWEz9vtPt2R2LPQEethyuy4mRBpr4UDmJ4IbNne1eRFnaJS+1D/wveaP30QxU8zIdHHnEoYVkZ1uWW9gQPawWWyVxdmKYCF9IdbVKU1W7slL3qFiBKwY1EkIUNKdBpWk03FfYb4yIXSTQlHJAAFJbjgMUdkio8yS/OU1WSrCrRcbdEiWXu5kaKWti/8vQBlk/YwA57qN8vbHl5OWSDMHtLqTLR7n7De/fMEF20outum0BAIBoArarKcjrPFMq7OL87bpcr5ZdYSecwbo8+m5/bxy6jxDjPymDSQSwbm5ECrJv3yQnWGfBNd1BkI2Xl07LvTf+uWGNd84AhbpyqVsz1KNQrRbJx7PgXVoxBvI0fC13wkAJ0eiZOxGl2RHjrdtlKaxvZzwUsXSxJ5OdaG6CCnLS4zp5ZshY0qZTy2HAdxh4BTd3+gG2QXWOnTXuwcWrItHXW2WWbfLNtNf8J/Tx1/6Xi6sGCJllw1C2GyV4uJ1wG8PvTmC2/NKdRWNJWGSbdsAhaREwljYHcSyddoFT0lbyDYEPPZAE3ATHBTbiR0u0qMpkRAnvBm89oB+0rCjj35EEsiG3p3zxl4rJiNw/Ug76Lzzucbs=
   skip_cleanup: true
-  file: wal-g.linux-amd64$GOTAGS.tar.gz
+  file: wal-g.linux-amd64$BINSUFFIX.tar.gz
   on:
     repo: x4m/wal-g
     tags: true
