@@ -12,7 +12,7 @@ matrix:
         apt:
           packages: liblzo2-dev
 before_deploy:
-  - tar -zcf wal-g.linux-amd64.tar.gz -C cmd/wal-g/ wal-g
+  - tar -zcf wal-g.linux-amd64$GOTAGS.tar.gz -C cmd/wal-g/ wal-g
 deploy:
   provider: releases
   api_key:
@@ -22,4 +22,3 @@ deploy:
   on:
     repo: x4m/wal-g
     tags: true
-    condition: "$GOTAGS = ''"
