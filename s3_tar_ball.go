@@ -116,7 +116,7 @@ func (tarBall *S3TarBall) TarWriter() *tar.Writer { return tarBall.tarWriter }
 // if all other parts of the backup are present in S3.
 // an alert is given with the corresponding error.
 func (tarBall *S3TarBall) Finish(sentinelDto *S3TarBallSentinelDto) error {
-	name := tarBall.backupName + SentinelSuffix
+
 	uploader := tarBall.uploader
 
 	uploader.finish()
@@ -125,21 +125,13 @@ func (tarBall *S3TarBall) Finish(sentinelDto *S3TarBallSentinelDto) error {
 	//If other parts are successful in uploading, upload json file.
 	if uploader.Success && sentinelDto != nil {
 		sentinelDto.UserData = GetSentinelUserData()
-		dtoBody, err := json.Marshal(*sentinelDto)
+		err := uploadSentinel(sentinelDto, uploader, tarBall.backupName)
 		if err != nil {
 			return err
 		}
-		path := GetBackupPath(uploader.uploadingFolder) + name
-		input := uploader.CreateUploadInput(path, bytes.NewReader(dtoBody))
-
-		uploadingErr := uploader.upload(input, path)
-		if uploadingErr != nil {
-			log.Printf("upload: could not upload '%s'\n", path)
-			log.Fatalf("S3TarBall finish: json failed to upload")
-		}
 	} else {
 		log.Printf("Uploaded %d compressed tar Files.\n", tarBall.partNumber)
-		log.Printf("Sentinel was not uploaded %v", name)
+		log.Printf("Sentinel was not uploaded %v", tarBall.backupName)
 		return errors.New("Sentinel was not uploaded due to timeline change during backup")
 	}
 
@@ -147,4 +139,19 @@ func (tarBall *S3TarBall) Finish(sentinelDto *S3TarBallSentinelDto) error {
 		fmt.Printf("Uploaded %d compressed tar Files.\n", tarBall.partNumber)
 	}
 	return err
+}
+
+func uploadSentinel(sentinelDto *S3TarBallSentinelDto, uploader *Uploader, backupName string) error {
+	name := backupName + SentinelSuffix
+	dtoBody, err := json.Marshal(*sentinelDto)
+	if err != nil {
+		return err
+	}
+	path := GetBackupPath(uploader.uploadingFolder) + name
+	input := uploader.CreateUploadInput(path, bytes.NewReader(dtoBody))
+	uploadingErr := uploader.upload(input, path)
+	if uploadingErr != nil {
+		return uploadingErr
+	}
+	return nil
 }
