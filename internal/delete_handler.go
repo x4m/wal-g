@@ -189,6 +189,8 @@ func deleteBeforeTarget(folder StorageFolder, target *Backup, dryRun bool) {
 	if skipLine < len(backupToScan)-1 {
 		deleteWALBefore(walSkipFileName, walFolder)
 		deleteBackupsBefore(backupToScan, skipLine, folder)
+		checkOldBinlogs(backupToScan[skipLine], folder)
+
 	}
 }
 

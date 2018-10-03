@@ -41,6 +41,11 @@ var (
 		"WALG_NETWORK_RATE_LIMIT":      nil,
 		"WALG_USE_WAL_DELTA":           nil,
 		"WALG_LOG_LEVEL":               nil,
+		
+
+		"WALG_MYSQL_DATASOURCE_NAME": nil,
+		"WALG_MYSQL_BINLOG_DST":      nil,
+		"WALG_MYSQL_BINLOG_END_TS":   nil,
 	}
 )
 

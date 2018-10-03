@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"runtime/pprof"
+	"github.com/x4m/wal-g/internal/tracelog"
 )
 
 var profile bool
@@ -73,7 +74,7 @@ func main() {
 
 	// Usage strings for supported commands
 	// TODO: refactor arg parsing towards golang flag usage and more helpful messages
-	if firstArgument == "-h" || firstArgument == "--help" || (firstArgument == "" && command != "backup-list") {
+	if firstArgument == "-h" || firstArgument == "--help" || (firstArgument == "" && !argumentlessCommand(command)) {
 		switch command {
 		case "backup-fetch":
 			fmt.Printf("usage:\twal-g backup-fetch output_directory backup_name\n\twal-g backup-fetch output_directory LATEST\n\n")
@@ -120,7 +121,8 @@ func main() {
 		log.Fatalf("FATAL: %+v\n", err)
 	}
 
-	fmt.Println("Path: ", folder.GetPath())
+	tracelog.InfoLogger.Println("Path: ", folder.GetPath())
+
 
 	if command == "wal-fetch" {
 		// Fetch and decompress a WAL file from S3.
@@ -134,6 +136,12 @@ func main() {
 		internal.HandleBackupPush(firstArgument, uploader)
 	} else if command == "backup-fetch" {
 		internal.HandleBackupFetch(backupName, folder, firstArgument, mem)
+	} else if command == "mysql-cron" {
+		internal.HandleMySQLCron(uploader, firstArgument)
+	} else if command == "stream-push" {
+		internal.HandleStreamPush(uploader, firstArgument)
+	} else if command == "stream-fetch" {
+		internal.HandleStreamFetch(firstArgument, folder)
 	} else if command == "backup-list" {
 		internal.HandleBackupList(folder)
 	} else if command == "delete" {
@@ -141,4 +149,7 @@ func main() {
 	} else {
 		l.Fatalf("Command '%s' is unsupported by WAL-G.", command)
 	}
+}
+func argumentlessCommand(command string) bool {
+	return command == "backup-list" || command == "stream-push" || command == "stream-fetch"
 }
