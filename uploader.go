@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"os"
 )
 
 // Uploader contains fields associated with uploading tarballs.
@@ -143,6 +144,37 @@ func (uploader *Uploader) UploadFile(file NamedReader) error {
 		tracelog.InfoLogger.Println("ETag ", trimETag)
 	}
 	return err
+}
+
+// TODO : unit tests
+// UploadFile compresses a file and uploads it.
+func (uploader *Uploader) UploadStream(fileName string) error {
+	compressor := uploader.compressor
+	pipeWriter := &CompressingPipeWriter{
+		Input:                os.Stdin,
+		NewCompressingWriter: compressor.NewWriter,
+	}
+
+	pipeWriter.Compress(&OpenPGPCrypter{})
+
+	backup := NewBackup(uploader.uploadingFolder, fileName)
+
+	dstPath := getStreamName(backup, compressor.FileExtension())
+	reader := pipeWriter.Output
+
+	input := uploader.CreateUploadInput(dstPath, reader)
+
+	err := uploader.upload(input, fileName)
+	tracelog.InfoLogger.Println("FILE PATH:", dstPath)
+
+	uploadSentinel(&S3TarBallSentinelDto{}, uploader, fileName)
+
+	return err
+}
+
+func getStreamName(backup *Backup, extension string) string {
+	dstPath := sanitizePath(backup.getPath()+"/stream.") + extension
+	return dstPath
 }
 
 // CreateUploadInput creates a s3manager.UploadInput for a Uploader using

@@ -80,7 +80,7 @@ func TestTryDownloadWALFile_Exist(t *testing.T) {
 	expectedData := []byte("mock")
 	storage.Store("bucket/server/wal_005/00000001000000000000007C", *bytes.NewBuffer(expectedData))
 	folder := testtools.NewStoringMockS3Folder(storage)
-	archiveReader, exist, err := walg.TryDownloadWALFile(folder, "server/wal_005/00000001000000000000007C")
+	archiveReader, exist, err := walg.TryDownloadFile(folder, "server/wal_005/00000001000000000000007C")
 	assert.NoError(t, err)
 	assert.True(t, exist)
 	actualData, err := ioutil.ReadAll(archiveReader)
@@ -91,7 +91,7 @@ func TestTryDownloadWALFile_Exist(t *testing.T) {
 func TestTryDownloadWALFile_NotExist(t *testing.T) {
 	storage := testtools.NewMockStorage()
 	folder := testtools.NewStoringMockS3Folder(storage)
-	reader, exist, err := walg.TryDownloadWALFile(folder, "server/wal_005/00000001000000000000007C")
+	reader, exist, err := walg.TryDownloadFile(folder, "server/wal_005/00000001000000000000007C")
 	assert.Nil(t, reader)
 	assert.False(t, exist)
 	assert.NoError(t, err)

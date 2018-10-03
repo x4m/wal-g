@@ -479,6 +479,41 @@ func HandleBackupPush(archiveDirectory string, uploader *Uploader) {
 	}
 }
 
+func HandleStreamFetch(backupName string, folder *S3Folder) {
+	if backupName == "" || backupName == "LATEST" {
+		latest, err := GetLatestBackupKey(folder)
+		if err != nil {
+			tracelog.ErrorLogger.Fatalf("Unable to get latest backup %+v\n", err)
+		}
+		backupName = latest
+	}
+	stat, _ := os.Stdout.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+	} else {
+		tracelog.ErrorLogger.Fatalf("stout is a terminal")
+	}
+	err := downloadAndDecompressStream(folder, backupName)
+	if err != nil {
+		tracelog.ErrorLogger.Fatalf("%+v\n", err)
+	}
+}
+
+func HandleStreamPush(uploader *Uploader, backupName string) {
+	if backupName == "" {
+		backupName = "stream_" + time.Now().UTC().Format("20060102T150405Z")
+	}
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		tracelog.ErrorLogger.Println("data is being piped from stdin")
+	} else {
+		tracelog.ErrorLogger.Fatalf("stdin is from a terminal")
+	}
+	err := uploader.UploadStream(backupName)
+	if err != nil {
+		tracelog.ErrorLogger.Fatalf("%+v\n", err)
+	}
+}
+
 // TODO : unit tests
 // HandleWALFetch is invoked to performa wal-g wal-fetch
 func HandleWALFetch(folder *S3Folder, walFileName string, location string, triggerPrefetch bool) {
@@ -556,7 +591,7 @@ func checkWALFileMagic(prefetched string) error {
 	return nil
 }
 
-func TryDownloadWALFile(folder *S3Folder, walPath string) (archiveReader io.ReadCloser, exists bool, err error) {
+func TryDownloadFile(folder *S3Folder, walPath string) (archiveReader io.ReadCloser, exists bool, err error) {
 	archive := &Archive{
 		Folder:  folder,
 		Archive: aws.String(sanitizePath(walPath)),
@@ -573,7 +608,7 @@ func TryDownloadWALFile(folder *S3Folder, walPath string) (archiveReader io.Read
 }
 
 // TODO : unit tests
-func decompressWALFile(dst io.Writer, archiveReader io.ReadCloser, decompressor Decompressor) error {
+func decompressFile(dst io.Writer, archiveReader io.ReadCloser, decompressor Decompressor) error {
 	crypter := OpenPGPCrypter{}
 	if crypter.IsUsed() {
 		reader, err := crypter.Decrypt(archiveReader)
@@ -590,7 +625,7 @@ func decompressWALFile(dst io.Writer, archiveReader io.ReadCloser, decompressor 
 // TODO : unit tests
 func downloadAndDecompressWALFile(folder *S3Folder, walFileName string) (io.ReadCloser, error) {
 	for _, decompressor := range Decompressors {
-		archiveReader, exists, err := TryDownloadWALFile(folder, folder.Server+WalPath+walFileName+"."+decompressor.FileExtension())
+		archiveReader, exists, err := TryDownloadFile(folder, folder.Server+WalPath+walFileName+"."+decompressor.FileExtension())
 		if err != nil {
 			return nil, err
 		}
@@ -599,12 +634,31 @@ func downloadAndDecompressWALFile(folder *S3Folder, walFileName string) (io.Read
 		}
 		reader, writer := io.Pipe()
 		go func() {
-			err = decompressWALFile(&EmptyWriteIgnorer{writer}, archiveReader, decompressor)
+			err = decompressFile(&EmptyWriteIgnorer{writer}, archiveReader, decompressor)
 			writer.CloseWithError(err)
 		}()
 		return reader, nil
 	}
 	return nil, NewArchiveNonExistenceError(walFileName)
+}
+
+// TODO : unit tests
+func downloadAndDecompressStream(folder *S3Folder, fileName string) error {
+	backup := NewBackup(folder, fileName)
+	for _, decompressor := range Decompressors {
+		d := decompressor
+		archiveReader, exists, err := TryDownloadFile(folder, getStreamName(backup, d.FileExtension()))
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		err = decompressFile(&EmptyWriteIgnorer{os.Stdout}, archiveReader, d)
+		os.Stdout.Close()
+		return nil
+	}
+	return ArchiveNonExistenceError{errors.Errorf("Archive '%s' does not exist.\n", fileName)}
 }
 
 // TODO : unit tests

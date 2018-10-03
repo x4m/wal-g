@@ -130,6 +130,7 @@ func ExtractAll(tarInterpreter TarInterpreter, files []ReaderMaker) error {
 		}
 		currentRun = failed
 		if len(failed) > 0 {
+			tracelog.InfoLogger.Printf("%v archives failed, will retry after timeout", len(failed))
 			retrier.retry()
 		}
 	}
