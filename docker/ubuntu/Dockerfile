@@ -12,7 +12,6 @@ RUN apt-get update && \
     postgresql-10 \
     postgresql-contrib \
     liblzo2-2 \
-    libbrotli1 && \
     rm -rf /var/lib/apt/lists/*
 
 RUN rm -rf $PGDATA

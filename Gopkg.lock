@@ -142,14 +142,6 @@
   revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
 
 [[projects]]
-  digest = "1:acc27c8f27da9682e170d84713e12951fca77331ff7bf217b05f914d975b5a95"
-  name = "github.com/google/brotli"
-  packages = ["go/cbrotli"]
-  pruneopts = "UT"
-  revision = "d6d98957ca8ccb1ef45922e978bb10efca0ea541"
-  version = "v1.0.7"
-
-[[projects]]
   digest = "1:e04cc716992a302cacf6d726409a05aa9546241998b24356d6dd0f01bc5a374e"
   name = "github.com/googleapis/gax-go"
   packages = ["."]
@@ -485,7 +477,6 @@
     "github.com/cyberdelia/lzo",
     "github.com/go-sql-driver/mysql",
     "github.com/go-yaml/yaml",
-    "github.com/google/brotli/go/cbrotli",
     "github.com/jackc/pgx",
     "github.com/pierrec/lz4",
     "github.com/pkg/errors",

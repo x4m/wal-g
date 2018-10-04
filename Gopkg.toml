@@ -46,10 +46,6 @@
   version = "2.2.1"
 
 [[constraint]]
-  name = "github.com/google/brotli"
-  version = "1.0.7"
-
-[[constraint]]
   name = "github.com/jackc/pgx"
   version = "3.2.0"
 
