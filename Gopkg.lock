@@ -91,12 +91,6 @@
   revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
 
 [[projects]]
-  name = "github.com/google/brotli"
-  packages = ["go/cbrotli"]
-  revision = "b601fe817bd3217cb144bbb380a43cae8e847388"
-  version = "v1.0.5"
-
-[[projects]]
   name = "github.com/jackc/pgx"
   packages = [
     ".",

@@ -54,7 +54,7 @@ func NewStoringMockUploader(storage *MockStorage, deltaDataFolder walg.DataFolde
 func NewStoringCompressingMockUploader(storage *MockStorage, deltaDataFolder walg.DataFolder) *walg.Uploader {
 	return walg.NewUploader(
 		NewMockS3Uploader(false, false, storage),
-		&walg.BrotliCompressor{},
+		&walg.Lz4Compressor{},
 		walg.NewS3Folder(NewMockStoringS3Client(storage), "bucket/", "server", true),
 		deltaDataFolder,
 		true,
