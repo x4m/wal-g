@@ -11,16 +11,14 @@ const (
 	Lz4AlgorithmName    = "lz4"
 	LzmaAlgorithmName   = "lzma"
 	ZstdAlgorithmName   = "zstd"
-	BrotliAlgorithmName = "brotli"
 
 	Lz4FileExtension    = "lz4"
 	LzmaFileExtension   = "lzma"
 	ZstdFileExtension   = "zst"
-	BrotliFileExtension = "br"
 	LzoFileExtension    = "lzo"
 )
 
-var CompressingAlgorithms = []string{Lz4AlgorithmName, LzmaAlgorithmName, BrotliAlgorithmName}
+var CompressingAlgorithms = []string{Lz4AlgorithmName, LzmaAlgorithmName}
 
 type UnknownCompressionMethodError struct {
 	error
@@ -47,12 +45,10 @@ type Decompressor interface {
 var Compressors = map[string]Compressor{
 	Lz4AlgorithmName:    Lz4Compressor{},
 	LzmaAlgorithmName:   LzmaCompressor{},
-	BrotliAlgorithmName: BrotliCompressor{},
 }
 
 var Decompressors = []Decompressor{
 	Lz4Decompressor{},
-	BrotliDecompressor{},
 	LzmaDecompressor{},
 	ZstdDecompressor{},
 }
