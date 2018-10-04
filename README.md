@@ -133,7 +133,7 @@ To configure GPG key for encryption and decryption. By default, no encryption is
 
 * `WALG_COMPRESSION_METHOD`
 
- To configure compression method used for backups. Possible options are: `lz4`, 'lzma', 'brotli'. Default method is `lz4`. LZ4 is the fastest method, but compression ratio is bad.
+ To configure compression method used for backups. Possible options are: `lz4`, 'lzma'. Default method is `lz4`. LZ4 is the fastest method, but compression ratio is bad.
  LZMA is way much slower, however it compresses backups about 6 times better than LZ4. Brotli is a good trade-off between speed and compression ratio which is about 3 times better than LZ4.
 
  * `WALG_DISK_RATE_LIMIT`
