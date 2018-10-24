@@ -125,6 +125,7 @@ func GetGarbageBackupTimeSlicesFromPrefix(backups []*s3.CommonPrefix, nongarbage
 	for _, k := range nongarbage {
 		keyfilter[k.Name] = k.Name
 	}
+
 	for _, object := range backups {
 		key := stripPrefixName(*object.Prefix)
 		if _, ok := keyfilter[key]; ok {
@@ -132,6 +133,7 @@ func GetGarbageBackupTimeSlicesFromPrefix(backups []*s3.CommonPrefix, nongarbage
 		}
 		sortTimes = append(sortTimes, BackupTime{key, time.Time{}, stripWalFileName(key)})
 	}
+
 	return sortTimes
 }
 
