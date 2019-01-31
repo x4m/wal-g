@@ -2,9 +2,12 @@ package internal
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
-	_ "github.com/go-sql-driver/mysql"
+	"fmt"
+	"github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
 	"github.com/x4m/wal-g/internal/tracelog"
 	"io"
@@ -88,7 +91,7 @@ func fetchBinlogs(folder StorageFolder, sentinel StreamSentinelDto, binlogsAreDo
 
 		binlogName := ExtractBinlogName(object, folder)
 
-		if (BinlogShouldBeFetched(sentinel, binlogName, endTS, object)) {
+		if BinlogShouldBeFetched(sentinel, binlogName, endTS, object) {
 			fileName := path.Join(dstFolder, binlogName)
 			tracelog.DebugLogger.Println("Download", binlogName, "to", fileName)
 			err := downloadWALFileTo(binlogFolder, binlogName, fileName)
@@ -340,6 +343,28 @@ func getMySQLConnection() (*sql.DB, error) {
 	if datasourceName == "" {
 		datasourceName = "root:password@/mysql"
 	}
+	caFile := getSettingValue("WALG_MYSQL_SSL_CA")
+	if caFile != "" {
+		rootCertPool := x509.NewCertPool()
+		pem, err := ioutil.ReadFile(caFile)
+		if err != nil {
+			return nil, err
+		}
+		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+			return nil, fmt.Errorf("Failed to load certificate from %s", caFile)
+		}
+		mysql.RegisterTLSConfig("custom", &tls.Config{
+			RootCAs: rootCertPool,
+		})
+		if strings.Contains(datasourceName, "?tls=") || strings.Contains(datasourceName, "&tls=") {
+			return nil, fmt.Errorf("MySQL datasource string contains tls option. It can't be used with WALG_MYSQL_SSL_CA option")
+		}
+		if strings.Contains(datasourceName, "?") {
+			datasourceName += "&tls=custom"
+		} else {
+			datasourceName += "?tls=custom"
+		}
+	}
 	db, err := sql.Open("mysql", datasourceName)
 	return db, err
 }
@@ -363,7 +388,7 @@ func (uploader *Uploader) UploadStream(fileName string, db *sql.DB, stream io.Re
 	backup := NewBackup(uploader.uploadingFolder, fileName)
 
 	dstPath := getStreamName(backup, compressor.FileExtension())
-	tracelog.DebugLogger.Println("Upload path", dstPath);
+	tracelog.DebugLogger.Println("Upload path", dstPath)
 	reader := pipeWriter.Output
 
 	err := uploader.upload(dstPath, reader)
