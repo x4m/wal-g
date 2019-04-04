@@ -86,6 +86,8 @@ func fetchBinlogs(folder StorageFolder, sentinel StreamSentinelDto, binlogsAreDo
 		return
 	}
 
+	var fetchedLogs []StorageObject
+
 	for _, object := range objects {
 		tracelog.DebugLogger.Println("Consider binlog ", object.GetName(), object.GetLastModified().Format(time.RFC3339))
 
@@ -99,7 +101,31 @@ func fetchBinlogs(folder StorageFolder, sentinel StreamSentinelDto, binlogsAreDo
 				binlogsAreDone <- err
 				return
 			}
+			fetchedLogs = append(fetchedLogs, object)
 		}
+	}
+
+	sort.Slice(fetchedLogs, func(i, j int) bool {
+		return fetchedLogs[i].GetLastModified().After(fetchedLogs[j].GetLastModified())
+	})
+
+	index_file, err := os.Create(filepath.Join(dstFolder, "binlogs_order"))
+	if err != nil {
+		binlogsAreDone <- err
+		return
+	}
+
+	for _, object := range fetchedLogs {
+		_, err := index_file.WriteString(ExtractBinlogName(object, folder) + "\n")
+		if err != nil {
+			binlogsAreDone <- err
+			return
+		}
+	}
+	err = index_file.Close()
+	if err != nil {
+		binlogsAreDone <- err
+		return
 	}
 
 	binlogsAreDone <- nil
