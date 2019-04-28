@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -395,14 +396,14 @@ func HandleProxy() {
 				tracelog.ErrorLogger.FatalError(e)
 			}
 			tracelog.InfoLogger.Println("From frontend ", reflect.TypeOf(msg))
-			tracelog.InfoLogger.Println(msg)
+
 			if _, ok := msg.(*pgproto3.CopyData); ok {
 				tracelog.InfoLogger.Println("Starting copy")
-				if !inTermination {
-					inTermination = true;
-					//termination <- msg
-				}
+			} else {
+				time.Sleep(time.Millisecond * 150)
+				tracelog.InfoLogger.Println(msg.Encode(nil))
 			}
+
 			err := backend.Send(msg)
 			fatal(err)
 		}
@@ -415,16 +416,12 @@ func HandleProxy() {
 				tracelog.ErrorLogger.FatalError(e)
 			}
 			tracelog.InfoLogger.Println("From backend ", reflect.TypeOf(msg))
-			tracelog.InfoLogger.Println(msg)
+			//tracelog.InfoLogger.Println(msg)
 			if _, ok := msg.(*pgproto3.Terminate); ok {
 				if !inTermination {
 					inTermination = true;
 					termination <- msg
 				}
-			}
-			if _, ok := msg.(*pgproto3.CopyData); ok {
-				tracelog.InfoLogger.Println("Starting copy")
-				//termination <- msg
 			}
 			err = frontend.Send(msg)
 			fatal(err)
