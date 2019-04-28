@@ -1,10 +1,17 @@
 package internal
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/pgproto3"
 	"github.com/pkg/errors"
 	"github.com/wal-g/wal-g/internal/storages/storage"
 	"github.com/wal-g/wal-g/internal/tracelog"
+	"net"
+	"reflect"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -155,4 +162,274 @@ func GetBaseFilesToUnwrap(backupFileStates BackupFileList, currentFilesToUnwrap 
 		}
 	}
 	return baseFilesToUnwrap, nil
+}
+
+// TODO : unit tests
+// HandleBackupFetch is invoked to perform wal-g backup-fetch
+func HandleBackupServe(folder storage.Folder, dbDataDirectory string, backupName string) {
+	tracelog.DebugLogger.Printf("HandleBackupServe(%s, folder, %s)\n", backupName, dbDataDirectory)
+
+	backup, err := GetBackupByName(backupName, folder)
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+	sentinelDto, err := backup.FetchSentinel()
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+	if sentinelDto.IsIncremental() {
+		tracelog.ErrorLogger.Fatal("Cannot serve incremental backup")
+	}
+
+	listener, err := net.Listen("tcp", "localhost:5433")
+	fatal(err)
+
+	defer listener.Close()
+	conn, err := listener.Accept()
+	fatal(err)
+
+	backend, err := pgproto3.NewBackend(conn, conn)
+	fatal(err)
+
+	message, err := backend.ReceiveStartupMessage()
+	fatal(err)
+
+	tracelog.InfoLogger.Println(message)
+
+	backend.Send(&pgproto3.Authentication{Type: pgproto3.AuthTypeOk})
+	backend.Send(&pgproto3.ParameterStatus{Name: "integer_datetimes", Value: "on"})
+	backend.Send(&pgproto3.ParameterStatus{Name: "server_version", Value: "12devel"})
+	backend.Send(&pgproto3.ReadyForQuery{})
+
+	for {
+		msg, err := backend.Receive()
+		fatal(err)
+
+		tracelog.InfoLogger.Println(reflect.TypeOf(msg))
+		tracelog.InfoLogger.Println(msg)
+		switch msg.(type) {
+		case *pgproto3.Query:
+			answerQuery(backend, msg.(*pgproto3.Query), sentinelDto, backup)
+		}
+	}
+}
+
+func fatal(err error) {
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+}
+
+func answerQuery(backend *pgproto3.Backend, query *pgproto3.Query, sentinel BackupSentinelDto, backup *Backup) {
+	if (strings.HasPrefix(query.String, "IDENTIFY_SYSTEM")) {
+		err := backend.Send(&pgproto3.RowDescription{
+			Fields: []pgproto3.FieldDescription{
+				{Name: "systemid"},
+				{Name: "timeline"},
+				{Name: "xlogpos"},
+				{Name: "dbname"},
+			},
+		})
+		fatal(err)
+
+		timelineId, _, err := ParseWALFilename(stripWalFileName(backup.Name))
+		fatal(err)
+
+		err = backend.Send(&pgproto3.DataRow{Values: [][]byte{
+			[]byte("1"),
+			[]byte(strconv.Itoa(int(timelineId))),
+			[]byte(pgx.FormatLSN(*sentinel.BackupFinishLSN)),
+			[]byte(""),
+		}})
+		fatal(err)
+
+		err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+		fatal(err)
+	} else if (strings.HasPrefix(query.String, "SHOW data_directory_mode")) {
+		err := backend.Send(&pgproto3.RowDescription{
+			Fields: []pgproto3.FieldDescription{{Name: "data_directory_mode"},
+			},
+		})
+		fatal(err)
+
+		err = backend.Send(&pgproto3.DataRow{Values: [][]byte{
+			[]byte("0700"),
+		}})
+		fatal(err)
+
+		err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+		fatal(err)
+	} else if (strings.HasPrefix(query.String, "SHOW wal_segment_size")) {
+		err := backend.Send(&pgproto3.RowDescription{
+			Fields: []pgproto3.FieldDescription{{Name: "wal_segment_size"},
+			},
+		})
+		fatal(err)
+
+		err = backend.Send(&pgproto3.DataRow{Values: [][]byte{
+			[]byte("16MB"),
+		}})
+		fatal(err)
+
+		err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+		fatal(err)
+	} else if (strings.HasPrefix(query.String, "BASE_BACKUP")) {
+		sendBackup(backend, sentinel, backup)
+	}
+
+	err := backend.Send(&pgproto3.ReadyForQuery{})
+	fatal(err)
+}
+
+func sendBackup(backend *pgproto3.Backend, sentinel BackupSentinelDto, backup *Backup) {
+	err := backend.Send(&pgproto3.RowDescription{
+		Fields: []pgproto3.FieldDescription{
+			{Name: "recptr"},
+			{Name: "tli"},
+		},
+	})
+	fatal(err)
+
+	timelineId, _, err := ParseWALFilename(stripWalFileName(backup.Name))
+	fatal(err)
+
+	err = backend.Send(&pgproto3.DataRow{Values: [][]byte{
+		[]byte(pgx.FormatLSN(*sentinel.BackupStartLSN)),
+		[]byte(strconv.Itoa(int(timelineId))),
+	}})
+	fatal(err)
+
+	err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+	fatal(err)
+
+	err = backend.Send(&pgproto3.RowDescription{
+		Fields: []pgproto3.FieldDescription{
+			{Name: "spcoid"},
+			{Name: "spclocation"},
+			{Name: "size"},
+		},
+	})
+	fatal(err)
+
+	tarsToExtract, _, err := backup.getTarsToExtract()
+	fatal(err)
+	for range tarsToExtract {
+		err = backend.Send(&pgproto3.DataRow{Values: [][]byte{
+			nil,
+			nil,
+			nil,
+		}})
+	}
+	fatal(err)
+
+	err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+
+	crypter := &OpenPGPCrypter{}
+	for _, rm := range tarsToExtract {
+		tracelog.InfoLogger.Println("Downloading ", rm.Path())
+		buffer := bytes.Buffer{}
+		err = DecryptAndDecompressTar(&buffer, rm, crypter)
+		fatal(err)
+		data := buffer.Bytes()
+		tracelog.InfoLogger.Println("sending ", len(data))
+		err = backend.Send(&pgproto3.CopyOutResponse{})
+		err = backend.Send(&pgproto3.CopyData{Data: data})
+		fatal(err)
+	}
+
+	err = backend.Send(&pgproto3.RowDescription{
+		Fields: []pgproto3.FieldDescription{
+			{Name: "recptr"},
+			{Name: "tli"},
+		},
+	})
+	fatal(err)
+	err = backend.Send(&pgproto3.DataRow{Values: [][]byte{
+		[]byte(pgx.FormatLSN(*sentinel.BackupFinishLSN)),
+		[]byte(strconv.Itoa(int(timelineId))),
+	}})
+	err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+	fatal(err)
+}
+
+func HandleProxy() {
+	tracelog.DebugLogger.Printf("AMA Proxy\n")
+
+	listener, err := net.Listen("tcp", "localhost:5433")
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+	defer listener.Close()
+	conn, err := listener.Accept()
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+	backend, err := pgproto3.NewBackend(conn, conn)
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+	startupMsg, err := backend.ReceiveStartupMessage()
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+
+	dial, err := net.Dial("tcp", "localhost:5432")
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+
+	frontend, err := pgproto3.NewFrontend(dial, dial)
+
+	err = frontend.Send(startupMsg)
+	if err != nil {
+		tracelog.ErrorLogger.FatalError(err)
+	}
+
+	var termination = make(chan interface{})
+	inTermination:=false
+
+	go func() {
+		for {
+			msg, e := frontend.Receive()
+			if e != nil {
+				tracelog.ErrorLogger.FatalError(e)
+			}
+			tracelog.InfoLogger.Println("From frontend ", reflect.TypeOf(msg))
+			tracelog.InfoLogger.Println(msg)
+			if _, ok := msg.(*pgproto3.CopyData); ok {
+				tracelog.InfoLogger.Println("Starting copy")
+				if !inTermination {
+					inTermination = true;
+					//termination <- msg
+				}
+			}
+			err := backend.Send(msg)
+			fatal(err)
+		}
+	}()
+
+	go func() {
+		for {
+			msg, e := backend.Receive()
+			if e != nil {
+				tracelog.ErrorLogger.FatalError(e)
+			}
+			tracelog.InfoLogger.Println("From backend ", reflect.TypeOf(msg))
+			tracelog.InfoLogger.Println(msg)
+			if _, ok := msg.(*pgproto3.Terminate); ok {
+				if !inTermination {
+					inTermination = true;
+					termination <- msg
+				}
+			}
+			if _, ok := msg.(*pgproto3.CopyData); ok {
+				tracelog.InfoLogger.Println("Starting copy")
+				//termination <- msg
+			}
+			err = frontend.Send(msg)
+			fatal(err)
+		}
+	}()
+
+	<-termination
 }
