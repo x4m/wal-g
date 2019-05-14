@@ -350,6 +350,7 @@ func sendBackup(backend *pgproto3.Backend, sentinel BackupSentinelDto, backup *B
 		[]byte(strconv.Itoa(int(timelineId))),
 	}})
 	err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
+	err = backend.Send(&pgproto3.CommandComplete{CommandTag: "SELECT"})
 	fatal(err)
 }
 
