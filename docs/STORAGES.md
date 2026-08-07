@@ -231,6 +231,37 @@ To store backups on files system, WAL-G requires that these variables be set:
 Please, keep in mind that by default storing backups on disk along with database is not safe. Do not use it as a disaster recovery plan.
 If this is used with nfs networked storage, the backend should provide standard file system semantics (no async).
 
+PolarDB File System
+-----------
+Direct access to PolarDB File System through `pfsdaemon` is available only in
+Linux binaries built with the `pfs` build tag and CGO enabled. The PFS SDK must
+be installed in `/usr/local/polarstore/pfsd` when WAL-G is linked:
+
+```console
+CGO_ENABLED=1 go build -tags pfs -o wal-g-pg-pfs ./main/pg
+```
+
+The storage prefix starts with the PFS block-device name:
+
+```console
+export WALG_PFS_PREFIX=/nvme1n1/wal-g
+export WALG_PFS_HOST_ID=1
+wal-g-pg-pfs backup-push "$PGDATA"
+```
+
+The following optional settings are supported:
+
+* `WALG_PFS_CLUSTER` (default: `polarstore`)
+* `WALG_PFS_HOST_ID` (default: `1`)
+* `WALG_PFSD_SERVER_ADDR` (default: `/var/run/pfsd/` from the SDK)
+* `WALG_PFSD_TIMEOUT` (default: `5s`)
+
+WAL-G connects to an already running `pfsdaemon`; it does not start or stop the
+daemon and does not require a FUSE mount.
+
+The underlying [`pkg/pfsclient`](../pkg/pfsclient/README.md) package is
+independent of WAL-G storage interfaces and can be reused by other Go projects.
+
 SSH
 -----------
 To store backups via ssh, WAL-G requires that these variables be set:

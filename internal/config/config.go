@@ -501,6 +501,13 @@ var (
 		//File
 		"WALG_FILE_PREFIX": true,
 
+		// PolarDB File System
+		"WALG_PFS_PREFIX":       true,
+		"WALG_PFS_CLUSTER":      true,
+		"WALG_PFS_HOST_ID":      true,
+		"WALG_PFSD_SERVER_ADDR": true,
+		"WALG_PFSD_TIMEOUT":     true,
+
 		// GOLANG
 		GoMaxProcs: true,
 		GoDebug:    true,

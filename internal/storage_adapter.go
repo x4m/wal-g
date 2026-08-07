@@ -54,7 +54,7 @@ func (adapter *StorageAdapter) loadSettings(config *viper.Viper) map[string]stri
 	return settings
 }
 
-var StorageAdapters = []StorageAdapter{
+var StorageAdapters = append([]StorageAdapter{
 	{"OSS", oss.SettingList, oss.ConfigureStorage},
 	{"S3", s3.SettingList, s3.ConfigureStorage},
 	{"FILE", nil, fs.ConfigureStorage},
@@ -62,4 +62,4 @@ var StorageAdapters = []StorageAdapter{
 	{"AZ", azure.SettingList, azure.ConfigureStorage},
 	{"SWIFT", swift.SettingList, swift.ConfigureStorage},
 	{"SSH", sh.SettingList, sh.ConfigureStorage},
-}
+}, optionalStorageAdapters...)
