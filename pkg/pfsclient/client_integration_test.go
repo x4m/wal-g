@@ -5,6 +5,7 @@ package pfsclient
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"strconv"
 	"strings"
@@ -62,4 +63,27 @@ func TestClientRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "renamed", entries[0].Name)
+}
+
+func TestOpenClassifiesUnavailableServer(t *testing.T) {
+	root := os.Getenv("PFS_TEST_ROOT")
+	if root == "" {
+		t.Skip("PFS_TEST_ROOT is not set")
+	}
+	if os.Getenv("PFS_TEST_OPEN_HELPER") == "1" {
+		parts := strings.Split(strings.Trim(root, "/"), "/")
+		_, err := Open(Config{
+			Device: parts[0], Cluster: os.Getenv("PFS_TEST_CLUSTER"), HostID: 127,
+			Server: os.Getenv("PFS_TEST_MISSING_SERVER"), Timeout: 100 * time.Millisecond,
+		})
+		require.Error(t, err)
+		assert.True(t, IsTemporary(err))
+		assert.True(t, RequiresProcessRestart(err))
+		return
+	}
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestOpenClassifiesUnavailableServer$", "-test.v")
+	cmd.Env = append(os.Environ(), "PFS_TEST_OPEN_HELPER=1", "PFS_TEST_MISSING_SERVER="+t.TempDir())
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
 }

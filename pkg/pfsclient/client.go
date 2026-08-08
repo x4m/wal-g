@@ -16,6 +16,7 @@ import (
 
 const (
 	DefaultCluster = "polarstore"
+	DefaultServer  = "/var/run/pfsd/"
 	DefaultHostID  = 1
 	DefaultTimeout = 5 * time.Second
 )
@@ -63,6 +64,9 @@ func Open(config Config) (*Client, error) {
 	}
 	if config.Cluster == "" {
 		config.Cluster = DefaultCluster
+	}
+	if config.Server == "" {
+		config.Server = DefaultServer
 	}
 	if config.HostID == 0 {
 		config.HostID = DefaultHostID

@@ -22,7 +22,6 @@ static const char *walg_pfs_dir_name(struct dirent *de) { return de->d_name; }
 import "C"
 
 import (
-	"fmt"
 	"time"
 	"unsafe"
 )
@@ -34,16 +33,10 @@ type fileInfo struct {
 }
 
 func sdkError(operation string, err error) error {
-	if err == nil {
-		return fmt.Errorf("PFS %s failed without setting errno", operation)
-	}
-	return fmt.Errorf("PFS %s: %w", operation, err)
+	return classifyError(operation, err)
 }
 
 func sdkSetServer(address string) {
-	if address == "" {
-		return
-	}
 	c := C.CString(address)
 	defer C.free(unsafe.Pointer(c))
 	C.pfsd_set_svr_addr(c, C.size_t(len(address)))

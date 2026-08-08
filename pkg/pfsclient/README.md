@@ -30,6 +30,13 @@ if err != nil {
 defer file.Close()
 ```
 
+Errors can be inspected with `errors.As` into `*pfsclient.Error`,
+`pfsclient.IsTemporary`, `pfsclient.IsAmbiguous`, and
+`pfsclient.RequiresProcessRestart`. The latter means retry must happen in a
+fresh process because the upstream C SDK may retain invalid global state after
+a connection failure. An ambiguous mutating operation must be restarted at the
+object/workflow level instead of repeated blindly.
+
 The upstream SDK has process-global mount state. Multiple `Client` values may
 share the same configuration; opening a client with a different configuration
 while another client is active returns an error.

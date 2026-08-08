@@ -256,6 +256,12 @@ The following optional settings are supported:
 * `WALG_PFSD_SERVER_ADDR` (default: `/var/run/pfsd/` from the SDK)
 * `WALG_PFSD_TIMEOUT` (default: `5s`)
 
+Connection failures are classified as temporary, but the process-global C SDK
+cannot be safely re-entered after every failed mount. Retry by starting a fresh
+WAL-G process; PostgreSQL does this naturally for failed archive commands.
+WAL-G does not blindly retry writes because their result may be ambiguous after
+a lost connection.
+
 WAL-G connects to an already running `pfsdaemon`; it does not start or stop the
 daemon and does not require a FUSE mount.
 
