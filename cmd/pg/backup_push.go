@@ -47,6 +47,7 @@ var (
 
 			storage, err := internal.ConfigureMultiStorage(cmd.Context(), true)
 			tracelog.ErrorLogger.FatalfOnError("Failed to configure multi-storage: %v", err)
+			defer utility.LoggedClose(storage, "Failed to close multi-storage")
 
 			rootFolder := multistorage.SetPolicies(storage.RootFolder(), policies.TakeFirstStorage)
 			if targetStorage == "" {

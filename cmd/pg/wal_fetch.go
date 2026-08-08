@@ -8,6 +8,7 @@ import (
 	"github.com/wal-g/wal-g/internal"
 	"github.com/wal-g/wal-g/internal/databases/postgres"
 	"github.com/wal-g/wal-g/internal/databases/postgres/constants"
+	"github.com/wal-g/wal-g/utility"
 )
 
 const WalFetchShortDescription = "Fetches a WAL file from storage"
@@ -20,6 +21,7 @@ var walFetchCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		storage, err := internal.ConfigureMultiStorage(cmd.Context(), false)
 		tracelog.ErrorLogger.FatalfOnError("Failed to configure multi-storage: %v", err)
+		defer utility.LoggedClose(storage, "Failed to close multi-storage")
 
 		folderReader, err := internal.PrepareMultiStorageFolderReader(cmd.Context(), storage.RootFolder(), targetStorage)
 		tracelog.ErrorLogger.FatalOnError(err)

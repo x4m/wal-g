@@ -5,6 +5,7 @@ import (
 	"github.com/wal-g/tracelog"
 	"github.com/wal-g/wal-g/internal"
 	"github.com/wal-g/wal-g/internal/databases/postgres"
+	"github.com/wal-g/wal-g/utility"
 )
 
 const WalPushShortDescription = "Uploads a WAL file to storage"
@@ -17,6 +18,7 @@ var walPushCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		storage, err := internal.ConfigureMultiStorage(cmd.Context(), true)
 		tracelog.ErrorLogger.FatalfOnError("Failed to configure multi-storage: %v", err)
+		defer utility.LoggedClose(storage, "Failed to close multi-storage")
 
 		walUploader, err := postgres.PrepareMultiStorageWalUploader(cmd.Context(), storage.RootFolder(), targetStorage)
 		tracelog.ErrorLogger.FatalOnError(err)

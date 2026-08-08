@@ -14,7 +14,6 @@ package pfsclient
 #include <dirent.h>
 #include <pfsd_sdk.h>
 
-static int walg_pfs_errno(void) { return errno; }
 static int64_t walg_pfs_stat_size(struct stat *st) { return st->st_size; }
 static int64_t walg_pfs_stat_mtime(struct stat *st) { return st->st_mtime; }
 static int walg_pfs_stat_is_dir(struct stat *st) { return S_ISDIR(st->st_mode); }
@@ -24,7 +23,6 @@ import "C"
 
 import (
 	"fmt"
-	"syscall"
 	"time"
 	"unsafe"
 )
@@ -35,9 +33,11 @@ type fileInfo struct {
 	isDir bool
 }
 
-func sdkError(operation string) error {
-	errno := syscall.Errno(C.walg_pfs_errno())
-	return fmt.Errorf("PFS %s: %w", operation, errno)
+func sdkError(operation string, err error) error {
+	if err == nil {
+		return fmt.Errorf("PFS %s failed without setting errno", operation)
+	}
+	return fmt.Errorf("PFS %s: %w", operation, err)
 }
 
 func sdkSetServer(address string) {
@@ -56,8 +56,8 @@ func sdkMount(cluster, pbd string, hostID, timeoutMS int) error {
 	defer C.free(unsafe.Pointer(cc))
 	cp := C.CString(pbd)
 	defer C.free(unsafe.Pointer(cp))
-	if C.pfsd_mount(cc, cp, C.int(hostID), C.int(C.PFS_RDWR)) != 0 {
-		return sdkError("mount")
+	if result, err := C.pfsd_mount(cc, cp, C.int(hostID), C.int(C.PFS_RDWR)); result != 0 {
+		return sdkError("mount", err)
 	}
 	return nil
 }
@@ -65,8 +65,8 @@ func sdkMount(cluster, pbd string, hostID, timeoutMS int) error {
 func sdkUnmount(pbd string) error {
 	c := C.CString(pbd)
 	defer C.free(unsafe.Pointer(c))
-	if C.pfsd_umount(c) != 0 {
-		return sdkError("unmount")
+	if result, err := C.pfsd_umount(c); result != 0 {
+		return sdkError("unmount", err)
 	}
 	return nil
 }
@@ -75,8 +75,8 @@ func sdkStat(path string) (fileInfo, error) {
 	c := C.CString(path)
 	defer C.free(unsafe.Pointer(c))
 	var st C.struct_stat
-	if C.pfsd_stat(c, &st) != 0 {
-		return fileInfo{}, sdkError("stat")
+	if result, err := C.pfsd_stat(c, &st); result != 0 {
+		return fileInfo{}, sdkError("stat", err)
 	}
 	return fileInfo{int64(C.walg_pfs_stat_size(&st)), time.Unix(int64(C.walg_pfs_stat_mtime(&st)), 0), C.walg_pfs_stat_is_dir(&st) != 0}, nil
 }
@@ -84,8 +84,8 @@ func sdkStat(path string) (fileInfo, error) {
 func sdkMkdir(path string) error {
 	c := C.CString(path)
 	defer C.free(unsafe.Pointer(c))
-	if C.pfsd_mkdir(c, 0755) != 0 {
-		return sdkError("mkdir")
+	if result, err := C.pfsd_mkdir(c, 0755); result != 0 {
+		return sdkError("mkdir", err)
 	}
 	return nil
 }
@@ -93,8 +93,8 @@ func sdkMkdir(path string) error {
 func sdkUnlink(path string) error {
 	c := C.CString(path)
 	defer C.free(unsafe.Pointer(c))
-	if C.pfsd_unlink(c) != 0 {
-		return sdkError("unlink")
+	if result, err := C.pfsd_unlink(c); result != 0 {
+		return sdkError("unlink", err)
 	}
 	return nil
 }
@@ -102,8 +102,8 @@ func sdkUnlink(path string) error {
 func sdkRmdir(path string) error {
 	c := C.CString(path)
 	defer C.free(unsafe.Pointer(c))
-	if C.pfsd_rmdir(c) != 0 {
-		return sdkError("rmdir")
+	if result, err := C.pfsd_rmdir(c); result != 0 {
+		return sdkError("rmdir", err)
 	}
 	return nil
 }
@@ -113,8 +113,8 @@ func sdkRename(oldPath, newPath string) error {
 	defer C.free(unsafe.Pointer(co))
 	cn := C.CString(newPath)
 	defer C.free(unsafe.Pointer(cn))
-	if C.pfsd_rename(co, cn) != 0 {
-		return sdkError("rename")
+	if result, err := C.pfsd_rename(co, cn); result != 0 {
+		return sdkError("rename", err)
 	}
 	return nil
 }
@@ -122,16 +122,16 @@ func sdkRename(oldPath, newPath string) error {
 func sdkOpen(path string, flags int, mode uint32) (int, error) {
 	c := C.CString(path)
 	defer C.free(unsafe.Pointer(c))
-	fd := C.pfsd_open(c, C.int(flags), C.mode_t(mode))
+	fd, callErr := C.pfsd_open(c, C.int(flags), C.mode_t(mode))
 	if fd < 0 {
-		return 0, sdkError("open")
+		return 0, sdkError("open", callErr)
 	}
 	return int(fd), nil
 }
 
 func sdkClose(fd int) error {
-	if C.pfsd_close(C.int(fd)) != 0 {
-		return sdkError("close")
+	if result, err := C.pfsd_close(C.int(fd)); result != 0 {
+		return sdkError("close", err)
 	}
 	return nil
 }
@@ -140,9 +140,9 @@ func sdkRead(fd int, buffer []byte) (int, error) {
 	if len(buffer) == 0 {
 		return 0, nil
 	}
-	n := C.pfsd_read(C.int(fd), unsafe.Pointer(&buffer[0]), C.size_t(len(buffer)))
+	n, callErr := C.pfsd_read(C.int(fd), unsafe.Pointer(&buffer[0]), C.size_t(len(buffer)))
 	if n < 0 {
-		return 0, sdkError("read")
+		return 0, sdkError("read", callErr)
 	}
 	return int(n), nil
 }
@@ -151,9 +151,9 @@ func sdkWrite(fd int, buffer []byte) (int, error) {
 	if len(buffer) == 0 {
 		return 0, nil
 	}
-	n := C.pfsd_write(C.int(fd), unsafe.Pointer(&buffer[0]), C.size_t(len(buffer)))
+	n, callErr := C.pfsd_write(C.int(fd), unsafe.Pointer(&buffer[0]), C.size_t(len(buffer)))
 	if n < 0 {
-		return 0, sdkError("write")
+		return 0, sdkError("write", callErr)
 	}
 	return int(n), nil
 }
@@ -161,9 +161,9 @@ func sdkWrite(fd int, buffer []byte) (int, error) {
 func sdkReadDir(path string) ([]string, error) {
 	c := C.CString(path)
 	defer C.free(unsafe.Pointer(c))
-	dir := C.pfsd_opendir(c)
+	dir, callErr := C.pfsd_opendir(c)
 	if dir == nil {
-		return nil, sdkError("opendir")
+		return nil, sdkError("opendir", callErr)
 	}
 	defer C.pfsd_closedir(dir)
 	var names []string

@@ -11,6 +11,7 @@ import (
 	"github.com/wal-g/wal-g/internal/databases/postgres"
 	"github.com/wal-g/wal-g/internal/multistorage"
 	"github.com/wal-g/wal-g/internal/multistorage/policies"
+	"github.com/wal-g/wal-g/utility"
 )
 
 const (
@@ -49,6 +50,7 @@ var backupFetchCmd = &cobra.Command{
 
 		storage, err := internal.ConfigureMultiStorage(cmd.Context(), false)
 		tracelog.ErrorLogger.FatalOnError(err)
+		defer utility.LoggedClose(storage, "Failed to close multi-storage")
 
 		rootFolder := multistorage.SetPolicies(storage.RootFolder(), policies.UniteAllStorages)
 		if targetStorage == "" {
