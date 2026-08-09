@@ -1,4 +1,4 @@
-//go:build !pfs || !linux || !cgo
+//go:build (!pfs || !linux || !cgo) && (!pfsnative || !linux || !amd64)
 
 package internal
 

@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/wal-g/tracelog"
@@ -11,7 +12,7 @@ import (
 	"github.com/wal-g/wal-g/pkg/storages/storage"
 )
 
-func OnAllStorages(ctx context.Context, fn func(folder storage.Folder) error) error {
+func OnAllStorages(ctx context.Context, fn func(folder storage.Folder) error) (result error) {
 	failover, err := internal.ConfigureFailoverStorages(ctx)
 	if err != nil {
 		return err
@@ -19,8 +20,17 @@ func OnAllStorages(ctx context.Context, fn func(folder storage.Folder) error) er
 
 	primary, err := internal.ConfigureStorage(ctx)
 	if err != nil {
+		for _, st := range failover {
+			_ = st.Close()
+		}
 		return err
 	}
+	defer func() {
+		result = errors.Join(result, primary.Close())
+		for _, st := range failover {
+			result = errors.Join(result, st.Close())
+		}
+	}()
 	toRun := multistorage.NameAndOrderStorages(primary, failover)
 
 	atLeastOneOK := false
@@ -50,7 +60,7 @@ func OnStorage(ctx context.Context, name string, fn func(folder storage.Folder) 
 		return fmt.Errorf("failed to init folder for storage %q: %w", name, err)
 	}
 
-	return fn(st.RootFolder())
+	return errors.Join(fn(st.RootFolder()), st.Close())
 }
 
 func ConfigureStorage(ctx context.Context, name string) (storage.Storage, error) {

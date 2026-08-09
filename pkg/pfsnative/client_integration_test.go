@@ -3,11 +3,14 @@
 package pfsnative
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -22,6 +25,83 @@ func TestMountTimesOutWithoutDaemon(t *testing.T) {
 	}
 	if removeErr := os.RemoveAll(dir); removeErr != nil {
 		t.Fatalf("pidfile descriptor was leaked: %v", removeErr)
+	}
+}
+
+func TestFilesystemIntegration(t *testing.T) {
+	root := os.Getenv("PFSNATIVE_TEST_MUTATION_ROOT")
+	if root == "" {
+		t.Skip("PFSNATIVE_TEST_MUTATION_ROOT is not set")
+	}
+	pbd := os.Getenv("PFSNATIVE_TEST_PBD")
+	hostID, err := strconv.Atoi(os.Getenv("PFSNATIVE_TEST_HOST_ID"))
+	if err != nil {
+		t.Fatalf("PFSNATIVE_TEST_HOST_ID must be an integer: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	c, err := Mount(ctx, Config{
+		ServerDir: os.Getenv("PFSNATIVE_TEST_SERVER_DIR"),
+		Cluster:   os.Getenv("PFSNATIVE_TEST_CLUSTER"),
+		PBD:       pbd,
+		HostID:    hostID,
+		Flags:     ReadWrite,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	dir := root + "/case-" + strconv.Itoa(os.Getpid())
+	original, renamed := dir+"/original.bin", dir+"/renamed.bin"
+	_ = c.Unlink(ctx, original)
+	_ = c.Unlink(ctx, renamed)
+	_ = c.Rmdir(ctx, dir)
+	if err = c.MkdirAll(ctx, dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload := bytes.Repeat([]byte("native-pfsd-go\x00"), 8192)
+	f, err := c.OpenFile(ctx, original, syscall.O_CREAT|syscall.O_TRUNC|syscall.O_WRONLY, 0o640)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, writeErr := f.WriteContext(ctx, payload); writeErr != nil || n != len(payload) {
+		t.Fatalf("write = %d, %v", n, writeErr)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := c.Stat(ctx, original)
+	if err != nil || info.Size() != int64(len(payload)) {
+		t.Fatalf("stat = %+v, %v", info, err)
+	}
+	f, err = c.Open(ctx, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := make([]byte, len(payload))
+	if _, err = io.ReadFull(f, actual); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	if !bytes.Equal(actual, payload) {
+		t.Fatal("read data differs from written data")
+	}
+	if err = c.Rename(ctx, original, renamed); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := c.ReadDir(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name != "renamed.bin" || entries[0].Size() != int64(len(payload)) {
+		t.Fatalf("unexpected directory entries: %+v", entries)
+	}
+	if err = c.Unlink(ctx, renamed); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Rmdir(ctx, dir); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -66,7 +146,7 @@ func TestMountIntegration(t *testing.T) {
 			t.Fatal(openErr)
 		}
 		buf := make([]byte, 4096)
-		n, readErr := file.Read(ctx, buf)
+		n, readErr := file.ReadContext(ctx, buf)
 		if readErr != nil {
 			t.Fatal(readErr)
 		}

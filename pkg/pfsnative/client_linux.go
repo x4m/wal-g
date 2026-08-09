@@ -40,6 +40,8 @@ type Client struct {
 	rpcMu    sync.Mutex
 	pidPath  string
 	pidFile  *os.File
+	metaLock *os.File
+	hostLock *os.File
 	ack      mountAck
 	mappings [][]byte
 	closed   bool
@@ -63,15 +65,23 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 	}
 
 	c := &Client{pidPath: filepath.Join(cfg.ServerDir, fmt.Sprintf("%d.pid", os.Getpid()))}
+	if cfg.Flags&ReadWrite == ReadWrite {
+		if err := c.acquireMountLocks(ctx, cfg.PBD, cfg.HostID); err != nil {
+			return nil, err
+		}
+	}
 	f, err := os.OpenFile(c.pidPath, os.O_RDWR|os.O_CREATE|os.O_EXCL|unix.O_SYNC, 0o644)
 	if err != nil {
+		c.closeMountLocks()
 		return nil, fmt.Errorf("create PFSD pidfile %q: %w", c.pidPath, err)
 	}
 	c.pidFile = f
 	ok := false
 	defer func() {
 		if !ok {
-			_ = c.close(context.Background(), false, false)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_ = c.close(cleanupCtx, true, true)
 		}
 	}()
 
@@ -120,6 +130,10 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 	}
 
 	c.ack = ack
+	if c.metaLock != nil {
+		_ = c.metaLock.Close()
+		c.metaLock = nil
+	}
 	for i, name := range ack.ShmNames {
 		if name == "" {
 			return nil, fmt.Errorf("PFSD shared memory filename %d is empty", i)
@@ -146,6 +160,13 @@ func (e *DaemonError) Error() string {
 	return fmt.Sprintf("PFSD rejected mount with error %d: %s", e.Code, e.Message)
 }
 
+func (e *DaemonError) Unwrap() error {
+	if e.Code >= 0 {
+		return nil
+	}
+	return syscall.Errno(-e.Code)
+}
+
 func (c *Client) ConnectionID() int32 { return c.ack.ConnectID }
 func (c *Client) MountID() int32      { return c.ack.MountID }
 
@@ -168,6 +189,7 @@ func (c *Client) close(ctx context.Context, signalUnmount, wait bool) error {
 		return nil
 	}
 	c.closed = true
+	defer c.closeMountLocks()
 
 	var errs []error
 	for _, mapping := range c.mappings {
@@ -212,6 +234,63 @@ func (c *Client) close(ctx context.Context, signalUnmount, wait bool) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (c *Client) acquireMountLocks(ctx context.Context, pbd string, hostID int) error {
+	lockPath := filepath.Join("/var/run/pfs", pbd+"-paxos-hostid")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o666)
+	if err != nil {
+		return fmt.Errorf("open PFSD host-ID lock %q: %w", lockPath, err)
+	}
+	c.metaLock = f
+	for {
+		err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &unix.Flock_t{
+			Type: unix.F_WRLCK, Whence: io.SeekStart, Start: 255 * 1024, Len: 1024,
+		})
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EACCES) && !errors.Is(err, syscall.EAGAIN) {
+			c.closeMountLocks()
+			return fmt.Errorf("lock PFSD mount metadata: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			c.closeMountLocks()
+			return fmt.Errorf("lock PFSD mount metadata: %w", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	host, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o666)
+	if err != nil {
+		c.closeMountLocks()
+		return fmt.Errorf("open PFSD host-ID lock %q: %w", lockPath, err)
+	}
+	c.hostLock = host
+	length := int64(1024)
+	if hostID == 0 {
+		length = 0
+	}
+	err = unix.FcntlFlock(host.Fd(), unix.F_SETLK, &unix.Flock_t{
+		Type: unix.F_WRLCK, Whence: io.SeekStart, Start: int64(hostID) * 1024, Len: length,
+	})
+	if err != nil {
+		c.closeMountLocks()
+		return fmt.Errorf("lock PFSD host ID %d: %w", hostID, err)
+	}
+	return nil
+}
+
+func (c *Client) closeMountLocks() {
+	if c.metaLock != nil {
+		_ = c.metaLock.Close()
+		c.metaLock = nil
+	}
+	if c.hostLock != nil {
+		_ = c.hostLock.Close()
+		c.hostLock = nil
+	}
 }
 
 func waitMountAck(ctx context.Context, f *os.File, epoch uint32) (mountAck, error) {

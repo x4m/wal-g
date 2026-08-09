@@ -45,12 +45,26 @@ const (
 	requestWaitRelease = 4
 	requestZombie      = 5
 
-	requestOpen  = 1
-	requestRead  = 2
-	requestStat  = 8
-	responseOpen = 1001
-	responseRead = 1002
-	responseStat = 1008
+	requestOpen     = 1
+	requestRead     = 2
+	requestWrite    = 3
+	requestUnlink   = 6
+	requestStat     = 8
+	requestMkdir    = 11
+	requestRmdir    = 12
+	requestOpenDir  = 13
+	requestReadDir  = 14
+	requestRename   = 16
+	responseOpen    = 1001
+	responseRead    = 1002
+	responseWrite   = 1003
+	responseUnlink  = 1006
+	responseStat    = 1008
+	responseMkdir   = 1011
+	responseRmdir   = 1012
+	responseOpenDir = 1013
+	responseReadDir = 1014
+	responseRename  = 1016
 )
 
 type FileInfo struct {
@@ -106,13 +120,25 @@ func (c *Client) Stat(ctx context.Context, path string) (FileInfo, error) {
 }
 
 type RPCError struct {
-	Op   string
-	Path string
-	Err  error
+	Op        string
+	Path      string
+	Err       error
+	Temporary bool
+	Ambiguous bool
 }
 
 func (e *RPCError) Error() string { return fmt.Sprintf("PFSD %s %q: %v", e.Op, e.Path, e.Err) }
 func (e *RPCError) Unwrap() error { return e.Err }
+
+func IsTemporary(err error) bool {
+	var rpcErr *RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Temporary
+}
+
+func IsAmbiguous(err error) bool {
+	var rpcErr *RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Ambiguous
+}
 
 type File struct {
 	client *Client
@@ -120,12 +146,17 @@ type File struct {
 	inode  int64
 	offset int64
 	common [16]byte
+	flags  int
 
 	mu     sync.Mutex
 	closed bool
 }
 
 func (c *Client) Open(ctx context.Context, path string) (*File, error) {
+	return c.OpenFile(ctx, path, syscall.O_RDONLY, 0)
+}
+
+func (c *Client) OpenFile(ctx context.Context, path string, flags int, mode uint32) (*File, error) {
 	if err := validateCString("path", path, maxPathLen); err != nil {
 		return nil, err
 	}
@@ -133,33 +164,41 @@ func (c *Client) Open(ctx context.Context, path string) (*File, error) {
 	defer c.rpcMu.Unlock()
 	for attempts := 0; attempts < 2; attempts++ {
 		response, _, err := c.execute(ctx, requestOpen, []byte(path), len(path), func(request []byte) {
-			putInt32(request, requestPayloadOffset, syscall.O_RDONLY)
+			putInt32(request, requestPayloadOffset, int32(flags))
+			putUint32(request, requestPayloadOffset+4, mode)
 		})
 		if err != nil {
+			if flags&(syscall.O_CREAT|syscall.O_TRUNC) != 0 {
+				return nil, mutatingError("open", path, err)
+			}
 			return nil, err
 		}
 		errno := syscall.Errno(int32At(response, responseErrorOffset))
-		if errno == syscall.ESTALE && attempts == 0 {
+		if errno == syscall.ESTALE && attempts == 0 && flags&(syscall.O_CREAT|syscall.O_TRUNC) == 0 {
 			continue
 		}
 		if int32At(response, 32) != responseOpen {
-			return nil, fmt.Errorf("unexpected PFSD response type: got %d, want %d", int32At(response, 32), responseOpen)
+			err = fmt.Errorf("unexpected PFSD response type: got %d, want %d", int32At(response, 32), responseOpen)
+			if flags&(syscall.O_CREAT|syscall.O_TRUNC) != 0 {
+				return nil, &RPCError{Op: "open", Path: path, Err: err, Ambiguous: true}
+			}
+			return nil, err
 		}
 		inode := int64At(response, 160)
 		if inode < 0 {
 			if errno == 0 {
 				errno = syscall.EIO
 			}
-			return nil, &RPCError{Op: "open", Path: path, Err: errno}
+			return nil, classifiedRPCError("open", path, errno, flags&(syscall.O_CREAT|syscall.O_TRUNC) != 0)
 		}
-		f := &File{client: c, path: path, inode: inode, offset: int64At(response, 168)}
+		f := &File{client: c, path: path, inode: inode, offset: int64At(response, 168), flags: flags}
 		copy(f.common[:], response[responseCommonOffset:responseCommonOffset+len(f.common)])
 		return f, nil
 	}
 	panic("unreachable")
 }
 
-func (f *File) Read(ctx context.Context, b []byte) (int, error) {
+func (f *File) ReadContext(ctx context.Context, b []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
@@ -234,11 +273,11 @@ func (c *Client) execute(ctx context.Context, requestType int32, payload []byte,
 	connectionID, mountID := c.ack.ConnectID, c.ack.MountID
 	c.mu.Unlock()
 
-	channel, err := firstChannel(mapping, header)
+	channel, channelRequestsCount, err := firstChannel(mapping, header)
 	if err != nil {
 		return nil, nil, err
 	}
-	slot, request, response, buffer, err := allocateRequest(channel, header.UnitSize, connectionID, mountID)
+	slot, request, response, buffer, err := allocateRequest(channel, channelRequestsCount, header.UnitSize, connectionID, mountID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -292,24 +331,31 @@ func selectMapping(mappings [][]byte, payloadLen int) ([]byte, shmHeader, error)
 	return nil, shmHeader{}, fmt.Errorf("PFSD request payload is too large: %d bytes", payloadLen)
 }
 
-func firstChannel(mapping []byte, h shmHeader) ([]byte, error) {
+func firstChannel(mapping []byte, h shmHeader) ([]byte, int, error) {
 	if h.Channels <= 0 || h.UnitSize > math.MaxInt || h.Size <= 0 || int64(h.Size) > int64(len(mapping)) {
-		return nil, errors.New("invalid PFSD shared memory dimensions")
+		return nil, 0, errors.New("invalid PFSD shared memory dimensions")
 	}
-	stride := channelBuffers + maxRequests*int(h.UnitSize)
+	if channelHeaderOffset+32 > len(mapping) {
+		return nil, 0, errors.New("PFSD shared memory channel header is truncated")
+	}
+	channelRequestsCount := int(int32At(mapping[channelHeaderOffset:], 24))
+	if channelRequestsCount <= 0 || channelRequestsCount > maxRequests {
+		return nil, 0, fmt.Errorf("invalid PFSD request slot count: %d", channelRequestsCount)
+	}
+	stride := channelBuffers + channelRequestsCount*int(h.UnitSize)
 	if channelHeaderOffset+stride > len(mapping) {
-		return nil, errors.New("PFSD shared memory channel is truncated")
+		return nil, 0, fmt.Errorf("PFSD shared memory channel is truncated: size=%d unit=%d requests=%d", len(mapping), h.UnitSize, channelRequestsCount)
 	}
 	ch := mapping[channelHeaderOffset : channelHeaderOffset+stride]
-	if int32At(ch, 24) != maxRequests || uint32At(ch, 4) != shmMagic {
-		return nil, errors.New("invalid PFSD shared memory channel header")
+	if uint32At(ch, 4) != shmMagic || uint64At(ch, 16) != h.UnitSize {
+		return nil, 0, errors.New("invalid PFSD shared memory channel header")
 	}
-	return ch, nil
+	return ch, channelRequestsCount, nil
 }
 
-func allocateRequest(channel []byte, unitSize uint64, connectionID, mountID int32) (int, []byte, []byte, []byte, error) {
+func allocateRequest(channel []byte, requestCount int, unitSize uint64, connectionID, mountID int32) (int, []byte, []byte, []byte, error) {
 	bitmap := uint64Pointer(channel, channelFreeOffset)
-	for slot := 0; slot < maxRequests; slot++ {
+	for slot := 0; slot < requestCount; slot++ {
 		request := channel[channelRequests+slot*requestSize : channelRequests+(slot+1)*requestSize]
 		value := uint64(uint16(connectionID)) | uint64(requestAlloc)<<16 | uint64(uint32(os.Getpid()))<<32
 		valuePointer := uint64Pointer(request, requestValueOffset)
