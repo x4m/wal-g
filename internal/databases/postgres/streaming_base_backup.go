@@ -66,7 +66,7 @@ func (bb *StreamingBaseBackup) Start(ctx context.Context, verifyChecksum bool, d
 		NoVerifyChecksums: !verifyChecksum,
 		MaxRate:           diskLimit,
 	}
-	result, err := pglogrepl.StartBaseBackup(ctx, bb.pgConn, options)
+	result, err := startBaseBackup(ctx, bb.pgConn, options)
 	if err != nil {
 		return
 	}
@@ -96,7 +96,8 @@ type archive struct {
 	reader io.Reader
 }
 
-func (a *archive) isDataDir() bool { return a.oid == 0 }
+func (a *archive) isDataDir() bool   { return a.oid == 0 }
+func (a *archive) isPolarData() bool { return a.name == "data.tar" }
 
 // Archives streams the archives produced by the running BASE_BACKUP command,
 // dispatching on bb.pgVersion. PG14- yields one archive per tablespace driven
@@ -114,6 +115,13 @@ func (bb *StreamingBaseBackup) Archives(ctx context.Context) iter.Seq2[*archive,
 }
 
 func remapsForArchive(arch *archive) (TarballStreamerRemaps, []string, error) {
+	if arch.isPolarData() {
+		remap, err := NewTarballStreamerRemap("^", "polar_shared_data/")
+		if err != nil {
+			return nil, nil, err
+		}
+		return TarballStreamerRemaps{*remap}, []string{"polar_shared_data/global/pg_control"}, nil
+	}
 	if arch.isDataDir() {
 		return nil, []string{"global/pg_control"}, nil
 	}
@@ -473,6 +481,10 @@ func parseArchiveHeader(body []byte) (name, path string, err error) {
 func (bb *StreamingBaseBackup) makeArchive(name, path string) (*archive, error) {
 	if name == "base.tar" {
 		tracelog.InfoLogger.Printf("Adding data directory")
+		return &archive{name: name}, nil
+	}
+	if name == "data.tar" {
+		tracelog.InfoLogger.Printf("Adding PolarDB shared data directory")
 		return &archive{name: name}, nil
 	}
 	oidStr := strings.TrimSuffix(name, ".tar")

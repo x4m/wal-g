@@ -121,6 +121,53 @@ Examples:
 Usage
 -----
 
+### PolarDB for PostgreSQL remote backups
+
+WAL-G can consume the extended `BASE_BACKUP` stream produced by PolarDB for
+PostgreSQL. In shared-storage mode the server sends both `base.tar` (the local
+data directory) and `data.tar` (the directory configured by `polar_datadir`).
+WAL-G stores the latter below `polar_shared_data/`, so use a relative PolarDB
+configuration such as:
+
+```conf
+polar_enable_shared_storage_mode = on
+polar_vfs.localfs_mode = true
+polar_datadir = 'file-dio://./polar_shared_data/'
+```
+
+Run `backup-push` without a data-directory argument to select the remote
+replication-protocol path:
+
+```bash
+PGHOST=127.0.0.1 PGPORT=5432 PGUSER=backup \
+WALG_PG_WAL_SIZE=1024 WALG_FILE_PREFIX=/backup \
+wal-g backup-push
+```
+
+`WALG_PG_WAL_SIZE` is expressed in MiB. It must match the PolarDB build for
+`backup-push`, `wal-push`, and `wal-fetch`; the common PolarDB value is 1024.
+After `backup-fetch`, configure `restore_command` with the same value. The
+restored directory contains both the local data files and
+`polar_shared_data/`, including the shared `global/pg_control`.
+
+This integration covers physical base backup and PostgreSQL WAL recovery. It
+does not create or snapshot the underlying shared-storage volume, and it does
+not replace the PolarDB-specific instance topology configuration required to
+start a restored node.
+
+For a recoverable online copy, keep either `full_page_writes` or data checksums
+enabled. PolarDB does not force full-page writes in `pg_backup_start()`; running
+with both protections disabled can therefore leave an undetectable torn page
+in the backup. Production integrations should reject that configuration.
+
+PolarDB's server-side `BASE_BACKUP` implementation excludes rebuildable
+`pg_logindex` contents. `polar_fullpage`, where present in older/custom builds,
+must also be excluded. Recovery needs the shared `base`, `global`, `pg_xact`,
+`pg_commit_ts`, `pg_multixact`, `pg_csnlog`, and `pg_twophase` state. To create
+a new RW compute node, initialize its local data directory with the PolarDB
+`polar-initdb.sh`, install the node-specific configuration, add
+`recovery.signal` when PITR is required, and then start PolarDB.
+
 ### ``backup-fetch``
 
 When fetching base backups, the user should pass in the name of the backup and a path to a directory to extract to. If this directory does not exist, WAL-G will create it and any intermediate subdirectories.

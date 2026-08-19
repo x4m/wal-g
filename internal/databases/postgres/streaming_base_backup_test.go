@@ -70,6 +70,13 @@ func TestRemapsForArchive(t *testing.T) {
 	assert.Len(t, remaps, 1)
 	// regex remap: "" → "pg_tblspc/16384/"
 	assert.Equal(t, "pg_tblspc/16384/", remaps[0].to)
+
+	polarData := &archive{name: "data.tar"}
+	remaps, tee, err = remapsForArchive(polarData)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"polar_shared_data/global/pg_control"}, tee)
+	assert.Len(t, remaps, 1)
+	assert.Equal(t, "polar_shared_data/", remaps[0].to)
 }
 
 func TestMakeArchive(t *testing.T) {
@@ -79,7 +86,12 @@ func TestMakeArchive(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "base.tar", a.name)
 	assert.True(t, a.isDataDir())
+	assert.False(t, a.isPolarData())
 	assert.Equal(t, int32(0), a.oid)
+
+	polarData, err := bb.makeArchive("data.tar", "")
+	assert.NoError(t, err)
+	assert.True(t, polarData.isPolarData())
 
 	// unknown OID rejected
 	_, err = bb.makeArchive("99999.tar", "/nowhere")
