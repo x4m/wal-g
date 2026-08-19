@@ -38,6 +38,7 @@ type Config struct {
 type Client struct {
 	mu       sync.Mutex
 	rpcMu    sync.Mutex
+	opMu     sync.RWMutex
 	pidPath  string
 	pidFile  *os.File
 	metaLock *os.File
@@ -179,6 +180,8 @@ func (c *Client) Close() error {
 func (c *Client) CloseContext(ctx context.Context) error {
 	c.rpcMu.Lock()
 	defer c.rpcMu.Unlock()
+	c.opMu.Lock()
+	defer c.opMu.Unlock()
 	return c.close(ctx, true, true)
 }
 

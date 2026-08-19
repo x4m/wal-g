@@ -745,6 +745,26 @@ func (queryRunner *PgQueryRunner) GetDataChecksums(ctx context.Context) (string,
 	return dataChecksums, nil
 }
 
+func (queryRunner *PgQueryRunner) GetFullPageWrites(ctx context.Context) (string, error) {
+	queryRunner.Mu.Lock()
+	defer queryRunner.Mu.Unlock()
+
+	var fullPageWrites string
+	err := queryRunner.Connection.QueryRow(ctx, "SHOW full_page_writes").Scan(&fullPageWrites)
+	if err != nil {
+		return "", errors.Wrap(err, "GetFullPageWrites: failed to check full_page_writes")
+	}
+	return fullPageWrites, nil
+}
+
+func (queryRunner *PgQueryRunner) EnablePolarBackupWalSwitch(ctx context.Context) error {
+	queryRunner.Mu.Lock()
+	defer queryRunner.Mu.Unlock()
+
+	_, err := queryRunner.Connection.Exec(ctx, "SET polar_enable_switch_wal_in_backup = on")
+	return errors.Wrap(err, "enable PolarDB WAL switch at backup stop")
+}
+
 // GetArchiveMode retrieves the current archive_mode setting.
 func (queryRunner *PgQueryRunner) GetArchiveMode(ctx context.Context) (string, error) {
 	queryRunner.Mu.Lock()

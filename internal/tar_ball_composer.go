@@ -3,6 +3,7 @@ package internal
 import (
 	"archive/tar"
 	"context"
+	"io"
 	"os"
 )
 
@@ -25,6 +26,7 @@ type ComposeFileInfo struct {
 	WasInBase     bool
 	Header        *tar.Header
 	IsIncremented bool
+	Open          func(context.Context) (io.ReadCloser, error)
 }
 
 func NewComposeFileInfo(path string, fileInfo os.FileInfo, wasInBase, isIncremented bool,

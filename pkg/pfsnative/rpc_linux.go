@@ -87,9 +87,6 @@ func (c *Client) Stat(ctx context.Context, path string) (FileInfo, error) {
 	if err := validateCString("path", path, maxPathLen); err != nil {
 		return FileInfo{}, err
 	}
-	c.rpcMu.Lock()
-	defer c.rpcMu.Unlock()
-
 	for attempts := 0; attempts < 2; attempts++ {
 		response, err := c.call(ctx, requestStat, []byte(path))
 		if err != nil {
@@ -160,8 +157,6 @@ func (c *Client) OpenFile(ctx context.Context, path string, flags int, mode uint
 	if err := validateCString("path", path, maxPathLen); err != nil {
 		return nil, err
 	}
-	c.rpcMu.Lock()
-	defer c.rpcMu.Unlock()
 	for attempts := 0; attempts < 2; attempts++ {
 		response, _, err := c.execute(ctx, requestOpen, []byte(path), len(path), func(request []byte) {
 			putInt32(request, requestPayloadOffset, int32(flags))
@@ -208,8 +203,6 @@ func (f *File) ReadContext(ctx context.Context, b []byte) (int, error) {
 		return 0, nil
 	}
 
-	f.client.rpcMu.Lock()
-	defer f.client.rpcMu.Unlock()
 	for attempts := 0; attempts < 2; attempts++ {
 		response, data, err := f.client.execute(ctx, requestRead, nil, len(b), func(request []byte) {
 			copy(request[requestCommonOffset:requestCommonOffset+len(f.common)], f.common[:])
@@ -260,6 +253,8 @@ func (c *Client) call(ctx context.Context, requestType int32, payload []byte) ([
 }
 
 func (c *Client) execute(ctx context.Context, requestType int32, payload []byte, bufferSize int, fill func([]byte)) ([]byte, []byte, error) {
+	c.opMu.RLock()
+	defer c.opMu.RUnlock()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()

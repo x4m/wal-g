@@ -133,8 +133,10 @@ func (p *TarBallFilePackerImpl) PackFileIntoTar(ctx context.Context, cfi *intern
 
 func (p *TarBallFilePackerImpl) createFileReadCloser(ctx context.Context, cfi *internal.ComposeFileInfo) (io.ReadCloser, error) {
 	var fileReadCloser io.ReadCloser
+	var err error
 	if cfi.IsIncremented {
-		bitmap, err := p.getDeltaBitmapFor(cfi.Path)
+		var bitmap *roaring.Bitmap
+		bitmap, err = p.getDeltaBitmapFor(cfi.Path)
 		if _, ok := err.(NoBitmapFoundError); ok { // this file has changed after the start of backup, so just skip it
 			return nil, newSkippedFileError(cfi.Path)
 		} else if err != nil {
@@ -169,8 +171,11 @@ func (p *TarBallFilePackerImpl) createFileReadCloser(ctx context.Context, cfi *i
 			return nil, errors.Wrapf(err, "PackFileIntoTar: failed reading incremental file '%s'\n", cfi.Path)
 		}
 	} else {
-		var err error
-		fileReadCloser, err = internal.StartReadingFile(ctx, cfi.Header, cfi.FileInfo, cfi.Path)
+		if cfi.Open != nil {
+			fileReadCloser, err = cfi.Open(ctx)
+		} else {
+			fileReadCloser, err = internal.StartReadingFile(ctx, cfi.Header, cfi.FileInfo, cfi.Path)
+		}
 		if err != nil {
 			return nil, err
 		}

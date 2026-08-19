@@ -48,6 +48,7 @@ func init() {
 		"log", "pg_log", "pg_xlog", "pg_wal", // Directories
 		"pgsql_tmp", "postgresql.auto.conf.tmp", "postmaster.pid", "postmaster.opts", "recovery.conf", // Files
 		"pg_dynshmem", "pg_notify", "pg_replslot", "pg_serial", "pg_stat_tmp", "pg_snapshots", "pg_subtrans", // Directories
+		"pg_logindex", "polar_fullpage", // PolarDB rebuildable structures
 		"standby.signal", // Signal files
 	}
 
@@ -247,6 +248,12 @@ func (bundle *Bundle) HandleWalkedFSObject(path string, info os.FileInfo, err er
 // in the final tarball. EXCLUDED directories are created
 // but their contents are not written to local disk.
 func (bundle *Bundle) addToBundle(path string, info os.FileInfo) error {
+	return bundle.addToBundleWithOpener(path, info, nil)
+}
+
+func (bundle *Bundle) addToBundleWithOpener(
+	path string, info os.FileInfo, opener func(context.Context) (io.ReadCloser, error),
+) error {
 	fileName := info.Name()
 	_, excluded := ExcludedFilenames[fileName]
 	isDir := info.IsDir()
@@ -280,7 +287,9 @@ func (bundle *Bundle) addToBundle(path string, info os.FileInfo) error {
 			return nil
 		}
 		isIncremented := bundle.isIncremented(path, wasInBase, info)
-		bundle.TarBallComposer.AddFile(internal.NewComposeFileInfo(path, info, wasInBase, isIncremented, fileInfoHeader))
+		composeInfo := internal.NewComposeFileInfo(path, info, wasInBase, isIncremented, fileInfoHeader)
+		composeInfo.Open = opener
+		bundle.TarBallComposer.AddFile(composeInfo)
 	} else {
 		err := bundle.TarBallComposer.AddHeader(fileInfoHeader, info)
 		if err != nil {
@@ -292,6 +301,18 @@ func (bundle *Bundle) addToBundle(path string, info os.FileInfo) error {
 	}
 
 	return nil
+}
+
+// AddDirectFile adds a file whose bytes are supplied by a non-POSIX source,
+// while retaining the regular WAL-G tar composition and upload pipeline.
+func (bundle *Bundle) AddDirectFile(
+	path string, info os.FileInfo, opener func(context.Context) (io.ReadCloser, error),
+) error {
+	if info.Name() == PgControl {
+		bundle.Sentinel = &internal.Sentinel{Info: info, Path: path, Open: opener}
+		return nil
+	}
+	return bundle.addToBundleWithOpener(path, info, opener)
 }
 
 // isPagedFile checks basic expectations for paged file
@@ -328,7 +349,12 @@ func (bundle *Bundle) UploadPgControl(ctx context.Context, compressorFileExtensi
 	}
 
 	if info.Mode().IsRegular() {
-		file, err := os.Open(path)
+		var file io.ReadCloser
+		if bundle.Sentinel.Open != nil {
+			file, err = bundle.Sentinel.Open(ctx)
+		} else {
+			file, err = os.Open(path)
+		}
 		if err != nil {
 			return errors.Wrapf(err, "UploadPgControl: failed to open file %s\n", path)
 		}

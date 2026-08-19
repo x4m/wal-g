@@ -204,6 +204,22 @@ func (bh *BackupHandler) startBackup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to build query runner: %v", err)
 	}
+	if polarDBDirectDataPath() != "" {
+		if err := bh.Workers.QueryRunner.EnablePolarBackupWalSwitch(ctx); err != nil {
+			return err
+		}
+		fullPageWrites, err := bh.Workers.QueryRunner.GetFullPageWrites(ctx)
+		if err != nil {
+			return err
+		}
+		dataChecksums, err := bh.Workers.QueryRunner.GetDataChecksums(ctx)
+		if err != nil {
+			return err
+		}
+		if fullPageWrites != "on" && dataChecksums != "on" {
+			return fmt.Errorf("unsafe PolarDB backup: full_page_writes and data_checksums are both disabled")
+		}
+	}
 
 	// If preventConcurrentBackups is set to true, we need to ensure that no backups are in progress
 	if bh.Arguments.preventConcurrentBackups {
@@ -335,8 +351,25 @@ func (bh *BackupHandler) uploadBackup(ctx context.Context) internal.TarFileSets 
 	tracelog.ErrorLogger.FatalOnError(err)
 
 	tracelog.InfoLogger.Println("Walking ...")
-	err = filepath.Walk(bh.PgInfo.PgDataDirectory, bundle.HandleWalkedFSObject)
+	directDataPath := polarDBDirectDataPath()
+	var directSource polarDBDirectSource
+	if directDataPath != "" {
+		directSource, err = openPolarDBDirectSource(ctx, directDataPath)
+		tracelog.ErrorLogger.FatalOnError(err)
+	}
+	err = filepath.Walk(bh.PgInfo.PgDataDirectory, func(path string, info os.FileInfo, walkErr error) error {
+		if directDataPath != "" && walkErr == nil && info.IsDir() &&
+			path == filepath.Join(bh.PgInfo.PgDataDirectory, "polar_shared_data") {
+			return filepath.SkipDir
+		}
+		return bundle.HandleWalkedFSObject(path, info, walkErr)
+	})
 	tracelog.ErrorLogger.FatalOnError(err)
+	if directDataPath != "" {
+		tracelog.InfoLogger.Printf("Walking PolarDB shared data directly through PFSD: %s", directDataPath)
+		err = directSource.AddToBundle(ctx, bundle, bh.PgInfo.PgDataDirectory)
+		tracelog.ErrorLogger.FatalOnError(err)
+	}
 
 	tracelog.InfoLogger.Println("Packing ...")
 	tarFileSets, err := bundle.FinishTarComposer()
@@ -349,6 +382,10 @@ func (bh *BackupHandler) uploadBackup(ctx context.Context) internal.TarFileSets 
 	tracelog.DebugLogger.Println("Uploading pg_control ...")
 	err = bundle.UploadPgControl(ctx, bh.Arguments.Uploader.Compression().FileExtension())
 	tracelog.ErrorLogger.FatalOnError(err)
+	if directSource != nil {
+		err = directSource.Close()
+		tracelog.ErrorLogger.FatalOnError(err)
+	}
 
 	// Stops backup and write/upload postgres `backup_label` and `tablespace_map` Files
 	tracelog.DebugLogger.Println("Stop backup and upload backup_label and tablespace_map")
@@ -636,10 +673,12 @@ func (bh *BackupHandler) uploadFilesMetadata(ctx context.Context, filesMetaDto F
 }
 
 func (bh *BackupHandler) checkPgVersionAndPgControl() {
-	_, err := os.ReadFile(filepath.Join(bh.PgInfo.PgDataDirectory, PgControlPath))
-	tracelog.ErrorLogger.FatalfOnError(
-		"It looks like you are trying to backup not pg_data. PgControl file not found: %v\n", err)
-	_, err = os.ReadFile(filepath.Join(bh.PgInfo.PgDataDirectory, "PG_VERSION"))
+	if polarDBDirectDataPath() == "" {
+		_, err := os.ReadFile(filepath.Join(bh.PgInfo.PgDataDirectory, PgControlPath))
+		tracelog.ErrorLogger.FatalfOnError(
+			"It looks like you are trying to backup not pg_data. PgControl file not found: %v\n", err)
+	}
+	_, err := os.ReadFile(filepath.Join(bh.PgInfo.PgDataDirectory, "PG_VERSION"))
 	tracelog.ErrorLogger.FatalfOnError(
 		"It looks like you are trying to backup not pg_data. PG_VERSION file not found: %v\n", err)
 }
