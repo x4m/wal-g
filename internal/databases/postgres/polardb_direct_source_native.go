@@ -57,6 +57,14 @@ func polarDBPFSDServerDir(pbd string) string {
 
 func (source *nativePolarDBDirectSource) Close() error { return source.client.Close() }
 
+func (source *nativePolarDBDirectSource) Open(ctx context.Context, filePath string) (io.ReadCloser, error) {
+	cleanPath := "/" + strings.TrimLeft(filePath, "/")
+	if cleanPath != source.root && !strings.HasPrefix(cleanPath, strings.TrimRight(source.root, "/")+"/") {
+		return nil, fmt.Errorf("PolarDB shared file %q is outside configured root %q", cleanPath, source.root)
+	}
+	return source.client.Open(ctx, cleanPath)
+}
+
 func (source *nativePolarDBDirectSource) AddToBundle(ctx context.Context, bundle *Bundle, pgData string) error {
 	return source.walk(ctx, bundle, pgData, source.root, "")
 }
@@ -90,7 +98,7 @@ func (source *nativePolarDBDirectSource) walk(
 		}
 		filePath := remotePath
 		opener := func(openCtx context.Context) (io.ReadCloser, error) {
-			return source.client.Open(openCtx, filePath)
+			return source.Open(openCtx, filePath)
 		}
 		if err = bundle.AddDirectFile(archivePath, entry.FileInfo, opener); err != nil {
 			return err

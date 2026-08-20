@@ -15,6 +15,7 @@ import (
 	"github.com/wal-g/tracelog"
 	"github.com/wal-g/wal-g/internal"
 	conf "github.com/wal-g/wal-g/internal/config"
+	"github.com/wal-g/wal-g/internal/ioextensions"
 	"github.com/wal-g/wal-g/internal/statistics"
 )
 
@@ -91,15 +92,37 @@ func uploadWALFile(ctx context.Context, uploader *WalUploader, walFilePath strin
 			return errors.Wrap(err, "Couldn't check whether there is an overwrite attempt due to inner error")
 		}
 	}
-	walFile, err := os.Open(walFilePath)
+	walFile, closeSource, err := openWalFile(ctx, walFilePath)
 	if err != nil {
 		return errors.Wrapf(err, "upload: could not open '%s'\n", walFilePath)
 	}
-	err = uploader.UploadWalFile(ctx, walFile)
+	defer closeSource()
+	err = uploader.UploadWalFile(ctx, ioextensions.NewNamedReaderImpl(walFile, walFilePath))
 	if err != nil {
 		return errors.Wrapf(err, "upload: could not Upload '%s'\n", walFilePath)
 	}
 	return walFile.Close()
+}
+
+func openWalFile(ctx context.Context, walFilePath string) (io.ReadCloser, func(), error) {
+	directRoot := polarDBDirectDataPath()
+	cleanPath := filepath.ToSlash(filepath.Clean(walFilePath))
+	cleanRoot := filepath.ToSlash(filepath.Clean(directRoot))
+	if directRoot == "" || (cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, strings.TrimRight(cleanRoot, "/")+"/")) {
+		file, err := os.Open(walFilePath)
+		return file, func() {}, err
+	}
+
+	source, err := openPolarDBDirectSource(ctx, directRoot)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	file, err := source.Open(ctx, cleanPath)
+	if err != nil {
+		_ = source.Close()
+		return nil, func() {}, err
+	}
+	return file, func() { _ = source.Close() }, nil
 }
 
 // TODO : unit tests

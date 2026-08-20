@@ -761,8 +761,15 @@ func (queryRunner *PgQueryRunner) EnablePolarBackupWalSwitch(ctx context.Context
 	queryRunner.Mu.Lock()
 	defer queryRunner.Mu.Unlock()
 
-	_, err := queryRunner.Connection.Exec(ctx, "SET polar_enable_switch_wal_in_backup = on")
-	return errors.Wrap(err, "enable PolarDB WAL switch at backup stop")
+	var enabled string
+	err := queryRunner.Connection.QueryRow(ctx, "SHOW polar_enable_switch_wal_in_backup").Scan(&enabled)
+	if err != nil {
+		return errors.Wrap(err, "check PolarDB WAL switch at backup stop")
+	}
+	if !strings.EqualFold(enabled, "on") {
+		return errors.New("polar_enable_switch_wal_in_backup must be enabled in the PolarDB configuration before direct backup")
+	}
+	return nil
 }
 
 // GetArchiveMode retrieves the current archive_mode setting.

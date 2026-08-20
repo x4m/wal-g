@@ -17,16 +17,18 @@ import (
 )
 
 const (
-	PgControlPath     = "/global/pg_control"
-	FilesMetadataName = "files_metadata.json"
+	PgControlPath              = "/global/pg_control"
+	PolarDBDirectPgControlPath = "/polar_shared_data/global/pg_control"
+	FilesMetadataName          = "files_metadata.json"
 )
 
 var UnwrapAll map[string]bool
 
 var UtilityFilePaths = map[string]bool{
-	PgControlPath:         true,
-	BackupLabelFilename:   true,
-	TablespaceMapFilename: true,
+	PgControlPath:              true,
+	PolarDBDirectPgControlPath: true,
+	BackupLabelFilename:        true,
+	TablespaceMapFilename:      true,
 }
 
 var patternPgBackupName = fmt.Sprintf("base_%[1]s(_D_%[1]s)?(_%[2]s)?", PatternTimelineAndLogSegNo, PatternLSN)

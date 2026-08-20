@@ -29,10 +29,21 @@ compute-node files keep their normal paths; shared files are stored below
 `polar_shared_data/`. The shared `global/pg_control` is uploaded last as the
 backup sentinel.
 
-The path excludes `pg_wal`, `pg_logindex`, and `polar_fullpage`. It enables
-`polar_enable_switch_wal_in_backup` for the backup session so
-`pg_backup_stop()` does not wait for a 1 GiB segment to fill. The backup is
-rejected when both `full_page_writes` and data checksums are disabled.
+The path excludes `pg_wal`, `pg_logindex`, and `polar_fullpage`.
+`polar_enable_switch_wal_in_backup` must be enabled in the server
+configuration so `pg_backup_stop()` does not wait for a 1 GiB segment to fill;
+PolarDB 17 does not allow WAL-G to change this parameter in a session. The
+backup is rejected when both `full_page_writes` and data checksums are
+disabled.
+
+The same `WALG_POLARDB_PFS_DATA_PATH` setting makes `wal-push` read an archive
+source path below the shared-data root through PFSD. Set upload concurrency to
+one in `archive_command`, because background WAL discovery requires a POSIX
+directory and the PolarDB WAL directory is not mounted into the host namespace:
+
+```conf
+archive_command = 'env WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/shared_data WALG_PFS_HOST_ID=2 WALG_UPLOAD_CONCURRENCY=1 WALG_FILE_PREFIX=/backup wal-g-pg-polardb wal-push %p'
+```
 
 Current scope is full backups through the native-Go PFSD transport. Delta
 backup and the C SDK source adapter are intentionally left for comparison
