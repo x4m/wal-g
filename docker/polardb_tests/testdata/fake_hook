@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+hook=$(basename "$0")
+case "${hook}" in
+  preflight|reset_source|stop_restore) ;;
+  start_restore)
+    : "${1:?mode}"
+    ;;
+  prepare_restore)
+    : "${1:?mode}"
+    [[ -d "${2:?fetched directory}/polar_shared_data" ]]
+    ;;
+  digest)
+    : "${1:?mode}" "${2:?SQL}"
+    if [[ "$2" == SELECT* ]]; then
+      echo "100000:1:100000:fake-digest"
+    fi
+    ;;
+  *)
+    echo "unknown fake hook: ${hook}" >&2
+    exit 1
+    ;;
+esac

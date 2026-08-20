@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Copy this directory outside the repository and replace every example hook.
+# The runner checks it before touching the source cluster.
+: "${POLAR_SOURCE_PGDATA:?}"
+: "${POLAR_SOURCE_PFS_DATA_PATH:?}"
+: "${WALG_PFS_HOST_ID:?}"
+command -v pfsdaemon >/dev/null
+command -v psql >/dev/null
+[[ "$(uname -s)" == Linux ]]
+echo "example hooks are documentation only; configure real PolarDB lifecycle hooks" >&2
+exit 1

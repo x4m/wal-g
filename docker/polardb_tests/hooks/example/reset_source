@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+echo "implement: recreate the disposable source PFS and local PolarDB node" >&2
+exit 1

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mode=${1:?mode}
+echo "implement: start ${mode} and wait for SQL readiness" >&2
+exit 1

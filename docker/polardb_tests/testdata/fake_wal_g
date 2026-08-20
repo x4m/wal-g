@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+case "${1:?command}" in
+  delete|backup-push) ;;
+  backup-list)
+    printf '[{"backup_name":"base_fake","uncompressed_size":1048576,"compressed_size":524288}]\n'
+    ;;
+  backup-fetch)
+    mkdir -p "${2:?restore directory}/polar_shared_data"
+    ;;
+  *)
+    echo "unexpected fake wal-g command: $*" >&2
+    exit 1
+    ;;
+esac

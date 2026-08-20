@@ -296,6 +296,14 @@ gp_integration_test: load_docker_common
 	docker compose build gp_tests
 	docker compose up --exit-code-from gp_tests gp_tests
 
+polardb_e2e_runner_test:
+	docker/polardb_tests/scripts/test_runner.sh
+
+# Requires a Linux/PFSD host and the environment documented in
+# docker/polardb_tests/README.md.
+polardb_e2e_test:
+	docker/polardb_tests/scripts/run_e2e.sh
+
 cloudberry_build: gp_build
 
 cloudberry_clean: gp_clean
