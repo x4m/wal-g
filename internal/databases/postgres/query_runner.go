@@ -630,7 +630,6 @@ func (queryRunner *PgQueryRunner) getTables(ctx context.Context) (map[string]Tab
 
 	err = queryRunner.processTables(ctx, queryRunner.Connection, getTablesQuery,
 		func(relFileNode, oid uint32, tableName, namespaceName, parentTableName string) {
-			tracelog.DebugLogger.Printf("adding %s as %d with filenode %d", tableName, oid, relFileNode)
 			parent := fmt.Sprintf("%s.%s", namespaceName, parentTableName)
 			child := fmt.Sprintf("%s.%s", namespaceName, tableName)
 
@@ -680,6 +679,8 @@ func (queryRunner *PgQueryRunner) getTables(ctx context.Context) (map[string]Tab
 		}
 	}
 
+	tracelog.DebugLogger.Printf("Collected partial-restore metadata for %d physical and partitioned relations", len(tables))
+
 	return formatedTables, nil
 }
 
@@ -720,7 +721,6 @@ func (queryRunner *PgQueryRunner) processTables(ctx context.Context, conn *pgx.C
 			// This happens for:
 			// partitioned indexes, views, foreign tables
 			if path.String == "" {
-				tracelog.DebugLogger.Printf("Skipping relation '%s.%s' (relkind=%c) due to no physical storage", namespaceName, tableName, relKind)
 				continue
 			}
 
