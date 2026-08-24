@@ -36,6 +36,13 @@ PolarDB 17 does not allow WAL-G to change this parameter in a session. The
 backup is rejected when both `full_page_writes` and data checksums are
 disabled.
 
+For direct backups WAL-G calls `pg_backup_stop(false)` on PostgreSQL 15+ (as it
+already does with `pg_stop_backup(false)` on 9.6-14), so completion does not
+wait for the required WAL segment to reach the archive. WAL archiving must
+remain configured and monitored: the base backup is not recoverable until its
+stop-LSN WAL is present. WAL-G logs the number and total size of files found in
+the PFS root and rejects a root without `global/pg_control` or non-empty files.
+
 The same `WALG_POLARDB_PFS_DATA_PATH` setting makes `wal-push` read an archive
 source path below the shared-data root through PFSD. Set upload concurrency to
 one in `archive_command`, because background WAL discovery requires a POSIX

@@ -205,6 +205,7 @@ func (bh *BackupHandler) startBackup(ctx context.Context) error {
 		return fmt.Errorf("failed to build query runner: %v", err)
 	}
 	if polarDBDirectDataPath() != "" {
+		bh.Workers.QueryRunner.DisableStopBackupArchiveWait()
 		if err := bh.Workers.QueryRunner.EnablePolarBackupWalSwitch(ctx); err != nil {
 			return err
 		}

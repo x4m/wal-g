@@ -67,7 +67,16 @@ type PgQueryRunner struct {
 	Version           int
 	SystemIdentifier  *uint64
 	stopBackupTimeout time.Duration
+	stopBackupNoWait  bool
 	Mu                sync.Mutex
+}
+
+// DisableStopBackupArchiveWait makes PostgreSQL 15+ consistent with the
+// pg_stop_backup(false) call WAL-G already uses for PostgreSQL 9.6-14.
+// The required WAL is still archived by archive_command, but backup-push does
+// not block waiting for a large PolarDB WAL segment to be archived.
+func (queryRunner *PgQueryRunner) DisableStopBackupArchiveWait() {
+	queryRunner.stopBackupNoWait = true
 }
 
 // BuildGetVersion formats a query to retrieve PostgreSQL numeric version
@@ -123,6 +132,9 @@ func (queryRunner *PgQueryRunner) BuildStartBackup() (string, error) {
 func (queryRunner *PgQueryRunner) BuildStopBackup() (string, error) {
 	switch {
 	case queryRunner.Version >= 150000:
+		if queryRunner.stopBackupNoWait {
+			return "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_backup_stop(false)", nil
+		}
 		return "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_backup_stop()", nil
 	case queryRunner.Version >= 90600:
 		return "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_stop_backup(false)", nil

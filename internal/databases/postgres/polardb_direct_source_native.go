@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wal-g/tracelog"
 	"github.com/wal-g/wal-g/pkg/pfsnative"
 )
 
@@ -66,11 +67,31 @@ func (source *nativePolarDBDirectSource) Open(ctx context.Context, filePath stri
 }
 
 func (source *nativePolarDBDirectSource) AddToBundle(ctx context.Context, bundle *Bundle, pgData string) error {
-	return source.walk(ctx, bundle, pgData, source.root, "")
+	stats := polarDBDirectWalkStats{}
+	if err := source.walk(ctx, bundle, pgData, source.root, "", &stats); err != nil {
+		return err
+	}
+	if !stats.hasPgControl {
+		return fmt.Errorf("PolarDB shared root %q does not contain global/pg_control", source.root)
+	}
+	if stats.nonEmptyFiles == 0 {
+		return fmt.Errorf("PolarDB shared root %q contains no non-empty files", source.root)
+	}
+	tracelog.InfoLogger.Printf(
+		"Discovered %d files (%d non-empty, %d bytes) under PolarDB shared root %s",
+		stats.files, stats.nonEmptyFiles, stats.bytes, source.root)
+	return nil
+}
+
+type polarDBDirectWalkStats struct {
+	files         int64
+	nonEmptyFiles int64
+	bytes         int64
+	hasPgControl  bool
 }
 
 func (source *nativePolarDBDirectSource) walk(
-	ctx context.Context, bundle *Bundle, pgData, current, relative string,
+	ctx context.Context, bundle *Bundle, pgData, current, relative string, stats *polarDBDirectWalkStats,
 ) error {
 	entries, err := source.client.ReadDir(ctx, current)
 	if err != nil {
@@ -91,10 +112,18 @@ func (source *nativePolarDBDirectSource) walk(
 			if err != nil {
 				return err
 			}
-			if err = source.walk(ctx, bundle, pgData, remotePath, relativePath); err != nil {
+			if err = source.walk(ctx, bundle, pgData, remotePath, relativePath, stats); err != nil {
 				return err
 			}
 			continue
+		}
+		stats.files++
+		stats.bytes += entry.Size()
+		if entry.Size() > 0 {
+			stats.nonEmptyFiles++
+		}
+		if relativePath == "global/pg_control" {
+			stats.hasPgControl = true
 		}
 		filePath := remotePath
 		opener := func(openCtx context.Context) (io.ReadCloser, error) {
