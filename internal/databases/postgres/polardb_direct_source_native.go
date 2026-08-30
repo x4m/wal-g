@@ -1,4 +1,4 @@
-//go:build pfsnative && linux && amd64
+//go:build pfsnative && !pfs && linux && amd64
 
 package postgres
 
@@ -13,8 +13,17 @@ import (
 	"strings"
 
 	"github.com/wal-g/tracelog"
+	"github.com/wal-g/wal-g/internal"
 	"github.com/wal-g/wal-g/pkg/pfsnative"
 )
+
+func restorePolarDBSharedDataPlatform(context.Context, string, string) error {
+	return fmt.Errorf("direct PolarDB restore is not implemented for the legacy native PFSD protocol; use -tags pfs")
+}
+
+func handlePolarDBWALFetch(context.Context, internal.StorageFolderReader, string) (bool, error) {
+	return false, nil
+}
 
 type nativePolarDBDirectSource struct {
 	client *pfsnative.Client
@@ -81,13 +90,6 @@ func (source *nativePolarDBDirectSource) AddToBundle(ctx context.Context, bundle
 		"Discovered %d files (%d non-empty, %d bytes) under PolarDB shared root %s",
 		stats.files, stats.nonEmptyFiles, stats.bytes, source.root)
 	return nil
-}
-
-type polarDBDirectWalkStats struct {
-	files         int64
-	nonEmptyFiles int64
-	bytes         int64
-	hasPgControl  bool
 }
 
 func (source *nativePolarDBDirectSource) walk(

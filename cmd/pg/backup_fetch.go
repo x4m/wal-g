@@ -84,6 +84,7 @@ var backupFetchCmd = &cobra.Command{
 		}
 
 		internal.HandleBackupFetch(cmd.Context(), rootFolder, targetBackupSelector, pgFetcher)
+		tracelog.ErrorLogger.FatalOnError(postgres.RestorePolarDBSharedData(cmd.Context(), args[0]))
 	},
 }
 

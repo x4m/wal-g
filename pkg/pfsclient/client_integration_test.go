@@ -3,6 +3,7 @@
 package pfsclient
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -46,7 +47,8 @@ func TestClientRoundTrip(t *testing.T) {
 	renamed := path.Join(testDir, "renamed")
 	file, err := client.OpenFile(original, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	require.NoError(t, err)
-	_, err = file.Write([]byte("pfs round trip"))
+	expected := bytes.Repeat([]byte("pfs round trip"), 256*1024)
+	_, err = file.Write(expected)
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 	require.NoError(t, client.Rename(original, renamed))
@@ -57,7 +59,7 @@ func TestClientRoundTrip(t *testing.T) {
 	contents, err := io.ReadAll(file)
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
-	assert.Equal(t, "pfs round trip", string(contents))
+	assert.Equal(t, expected, contents)
 
 	entries, err := client.ReadDir(testDir)
 	require.NoError(t, err)

@@ -6,11 +6,16 @@ PFSD while the database is inside `pg_backup_start()` / `pg_backup_stop()`.
 The resulting backup uses the normal WAL-G tar and metadata format, so the
 existing `backup-fetch` and `wal-fetch` commands restore it.
 
-Build the native PFSD implementation on Linux/amd64:
+Build the C SDK implementation on Linux with PFSD headers and `libpfsd.a`
+installed under `/usr/local/polarstore/pfsd`:
 
 ```console
-CGO_ENABLED=0 go build -tags pfsnative -o wal-g-pg-polardb ./main/pg
+CGO_ENABLED=1 go build -tags pfs -o wal-g-pg-polardb ./main/pg
 ```
+
+The `pfs` build tag, and therefore the CGO and PFSD dependencies, are not part
+of regular WAL-G builds. The experimental `pfsnative` tag targets the legacy
+PFSD protocol and does not support the restore path described below.
 
 Run `backup-push` with the local compute-node data directory as its argument
 and the shared-data PFS path in `WALG_POLARDB_PFS_DATA_PATH`:
@@ -52,6 +57,32 @@ directory and the PolarDB WAL directory is not mounted into the host namespace:
 archive_command = 'env WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/shared_data WALG_PFS_HOST_ID=2 WALG_UPLOAD_CONCURRENCY=1 WALG_FILE_PREFIX=/backup wal-g-pg-polardb wal-push %p'
 ```
 
-Current scope is full backups through the native-Go PFSD transport. Delta
-backup and the C SDK source adapter are intentionally left for comparison
-after the full-backup E2E and throughput measurements.
+For restore, choose a new, empty shared-data root and run the normal
+`backup-fetch`. WAL-G leaves compute-local files in the destination directory,
+copies the extracted `polar_shared_data` subtree to PFS, writes
+`global/pg_control` last, and removes the local staging subtree after success:
+
+```console
+export WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/restored_shared_data
+export WALG_PFS_CLUSTER=disk
+export WALG_PFS_HOST_ID=3
+export WALG_FILE_PREFIX=/backup
+wal-g-pg-polardb backup-fetch /var/lib/polardb/restored LATEST
+```
+
+The PFS destination must not exist or must be empty. This prevents an
+incomplete restore from being mixed with an older cluster.
+
+During archive recovery, `wal-fetch` maps its destination to
+`$WALG_POLARDB_PFS_DATA_PATH/pg_wal/<wal_name>`. It downloads and decompresses
+the complete WAL segment, writes it through PFSD under a temporary name, and
+atomically renames it into place:
+
+```conf
+restore_command = 'env WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/restored_shared_data WALG_PFS_CLUSTER=disk WALG_PFS_HOST_ID=3 WALG_FILE_PREFIX=/backup wal-g-pg-polardb wal-fetch %f %p'
+```
+
+The SDK wrapper chunks large reads and writes to requests of at most 1 MiB,
+which is compatible with both the public SDK and the validated PFSD fork.
+PFSD lifecycle remains process-global, so one WAL-G process cannot mount two
+different devices or configurations concurrently.

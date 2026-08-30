@@ -19,16 +19,19 @@ const (
 	DefaultServer  = "/var/run/pfsd/"
 	DefaultHostID  = 1
 	DefaultTimeout = 5 * time.Second
+	// MaxIOSize is accepted by both PFSD SDK variants validated by WAL-G.
+	MaxIOSize = 1 << 20
 )
 
 // Config describes one pfsdaemon connection. Device is the PFS block-device
 // name, without leading or trailing slashes.
 type Config struct {
-	Device  string
-	Cluster string
-	HostID  int
-	Server  string
-	Timeout time.Duration
+	Device   string
+	Cluster  string
+	HostID   int
+	Server   string
+	Timeout  time.Duration
+	ReadOnly bool
 }
 
 // FileInfo is the subset of PFS metadata commonly needed by applications.
@@ -91,7 +94,7 @@ func Open(config Config) (*Client, error) {
 		return &Client{config: config}, nil
 	}
 	sdkSetServer(config.Server)
-	if err := sdkMount(config.Cluster, config.Device, config.HostID, int(config.Timeout/time.Millisecond)); err != nil {
+	if err := sdkMount(config.Cluster, config.Device, config.HostID, int(config.Timeout/time.Millisecond), config.ReadOnly); err != nil {
 		return nil, err
 	}
 	mountState.config = config
@@ -158,6 +161,9 @@ func (c *Client) ReadDir(name string) ([]DirEntry, error) {
 }
 
 func (c *Client) MkdirAll(name string) error {
+	if path.Clean(name) == "/"+c.config.Device {
+		return nil
+	}
 	info, err := c.Stat(name)
 	if err == nil {
 		if info.IsDir {
@@ -196,6 +202,7 @@ func (f *File) Read(buffer []byte) (int, error) {
 	return n, err
 }
 func (f *File) Write(buffer []byte) (int, error) { return sdkWrite(f.fd, buffer) }
+func (f *File) Truncate(size int64) error        { return sdkFtruncate(f.fd, size) }
 func (f *File) Close() error {
 	f.once.Do(func() { f.err = sdkClose(f.fd) })
 	return f.err

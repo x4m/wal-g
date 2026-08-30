@@ -22,6 +22,7 @@ static const char *walg_pfs_dir_name(struct dirent *de) { return de->d_name; }
 import "C"
 
 import (
+	"io"
 	"time"
 	"unsafe"
 )
@@ -42,14 +43,18 @@ func sdkSetServer(address string) {
 	C.pfsd_set_svr_addr(c, C.size_t(len(address)))
 }
 
-func sdkMount(cluster, pbd string, hostID, timeoutMS int) error {
+func sdkMount(cluster, pbd string, hostID, timeoutMS int, readOnly bool) error {
 	C.pfsd_set_mode(C.PFSD_SDK_THREADS)
 	C.pfsd_set_connect_timeout(C.int(timeoutMS))
 	cc := C.CString(cluster)
 	defer C.free(unsafe.Pointer(cc))
 	cp := C.CString(pbd)
 	defer C.free(unsafe.Pointer(cp))
-	if result, err := C.pfsd_mount(cc, cp, C.int(hostID), C.int(C.PFS_RDWR)); result != 0 {
+	flags := C.int(C.PFS_RDWR)
+	if readOnly {
+		flags = C.int(C.PFS_RD)
+	}
+	if result, err := C.pfsd_mount(cc, cp, C.int(hostID), flags); result != 0 {
 		return sdkError("mount", err)
 	}
 	return nil
@@ -133,6 +138,9 @@ func sdkRead(fd int, buffer []byte) (int, error) {
 	if len(buffer) == 0 {
 		return 0, nil
 	}
+	if len(buffer) > MaxIOSize {
+		buffer = buffer[:MaxIOSize]
+	}
 	n, callErr := C.pfsd_read(C.int(fd), unsafe.Pointer(&buffer[0]), C.size_t(len(buffer)))
 	if n < 0 {
 		return 0, sdkError("read", callErr)
@@ -141,14 +149,27 @@ func sdkRead(fd int, buffer []byte) (int, error) {
 }
 
 func sdkWrite(fd int, buffer []byte) (int, error) {
-	if len(buffer) == 0 {
-		return 0, nil
+	written := 0
+	for written < len(buffer) {
+		end := min(written+MaxIOSize, len(buffer))
+		chunk := buffer[written:end]
+		n, callErr := C.pfsd_write(C.int(fd), unsafe.Pointer(&chunk[0]), C.size_t(len(chunk)))
+		if n < 0 {
+			return written, sdkError("write", callErr)
+		}
+		if n == 0 {
+			return written, io.ErrShortWrite
+		}
+		written += int(n)
 	}
-	n, callErr := C.pfsd_write(C.int(fd), unsafe.Pointer(&buffer[0]), C.size_t(len(buffer)))
-	if n < 0 {
-		return 0, sdkError("write", callErr)
+	return written, nil
+}
+
+func sdkFtruncate(fd int, size int64) error {
+	if result, err := C.pfsd_ftruncate(C.int(fd), C.off_t(size)); result != 0 {
+		return sdkError("ftruncate", err)
 	}
-	return int(n), nil
+	return nil
 }
 
 func sdkReadDir(path string) ([]string, error) {

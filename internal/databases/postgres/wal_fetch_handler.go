@@ -31,6 +31,10 @@ func (err InvalidWalFileMagicError) Error() string {
 func HandleWALFetch(ctx context.Context,
 	baseReader internal.StorageFolderReader, walFileName string, location string, prefetcher WalPrefetcher) error {
 	tracelog.DebugLogger.Printf("HandleWALFetch in folder with walFileName=%s, location=%s)\n", walFileName, location)
+	handled, err := handlePolarDBWALFetch(ctx, baseReader, walFileName)
+	if handled || err != nil {
+		return err
+	}
 	reader := baseReader.SubFolder(utility.WalPath)
 	location = utility.ResolveSymlink(location)
 	defer prefetcher.Prefetch(ctx, baseReader, walFileName, location)
