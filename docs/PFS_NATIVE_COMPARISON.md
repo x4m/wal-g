@@ -10,7 +10,7 @@ storage implementations:
 
 | Area | C SDK (`pfs`) | Native Go (`pfsnative`) |
 |---|---|---|
-| WAL-G PostgreSQL backup/restore E2E | Passed | Direct path pending revalidation |
+| WAL-G PostgreSQL backup/restore E2E | Passed | Passed |
 | Build dependency | C/C++ toolchain and installed PFS SDK | Go toolchain only |
 | Resulting Linux binary | Dynamically linked to glibc | Statically linked |
 | Cross-compilation | Constrained by cgo and PFS SDK | Linux/amd64 from any Go build host |
