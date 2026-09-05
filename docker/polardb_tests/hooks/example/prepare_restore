@@ -2,5 +2,5 @@
 set -Eeuo pipefail
 mode=${1:?mode}
 fetched_dir=${2:?fetched directory}
-echo "implement: install ${fetched_dir} as the ${mode} node (including polar_shared_data on a fresh PFS)" >&2
+echo "implement: install local files from ${fetched_dir} as ${mode}, configure its PFS root, and create recovery.signal" >&2
 exit 1

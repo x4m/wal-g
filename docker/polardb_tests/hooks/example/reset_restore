@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mode=${1:?mode}
+restore_dir=${2:?restore directory}
+echo "implement: reset the disposable ${mode} local node at ${restore_dir} and its dedicated PFS root" >&2
+exit 1

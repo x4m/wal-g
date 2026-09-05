@@ -7,7 +7,9 @@ case "${1:?command}" in
     printf '[{"backup_name":"base_fake","uncompressed_size":1048576,"compressed_size":524288}]\n'
     ;;
   backup-fetch)
-    mkdir -p "${2:?restore directory}/polar_shared_data"
+    if [[ -z "${WALG_POLARDB_PFS_DATA_PATH:-}" ]]; then
+      mkdir -p "${2:?restore directory}/polar_shared_data"
+    fi
     ;;
   *)
     echo "unexpected fake wal-g command: $*" >&2

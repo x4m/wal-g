@@ -18,8 +18,11 @@ executable hooks in `POLAR_E2E_HOOKS`:
 |---|---|---|
 | `preflight` | none | Check Linux, PFSD, PolarDB and test device; make no changes. |
 | `reset_source` | none | Recreate the disposable source PFS and local node. |
-| `prepare_restore` | mode, fetched directory | Copy fetched `polar_shared_data` to a fresh PFS and install local node files. |
-| `start_restore` | mode | Start `source`, `base_backup`, or `direct_pfsd` and wait until SQL is available. |
+| `wait_backup_ready` | mode | Wait until the backup's stop-LSN WAL is present in the repository. |
+| `reset_restore` | mode, fetched directory | Empty the mode's disposable local node and dedicated PFS restore root. |
+| `restore_pfs_data_path` | mode | Print the dedicated `/<pbd>/<path>` used by direct `backup-fetch`. |
+| `prepare_restore` | mode, fetched directory | Install local node files and create `recovery.signal`; direct shared data has already been copied to PFS by WAL-G. |
+| `start_restore` | mode | Start the node, complete recovery, promote it and wait for read-write SQL readiness. |
 | `stop_restore` | mode | Stop that node; it should be safe when already stopped. |
 | `digest` | mode, SQL | Run SQL and print only its unaligned scalar result. |
 
@@ -27,9 +30,12 @@ Skeletons for all hooks are in `hooks/example`; they fail closed until their
 environment-specific commands are implemented.
 
 The lifecycle hooks own destructive operations, which makes their target block
-device and directories reviewable for each environment. The runner itself only
-removes its `POLAR_E2E_WORK_DIR` subdirectories and backup objects below two
-dedicated prefixes.
+device and directories reviewable for each environment. In `direct_pfsd` mode,
+the runner sets `WALG_POLARDB_PFS_DATA_PATH` for both `backup-push` and
+`backup-fetch`; copying `polar_shared_data` in a hook would bypass the storage
+implementation under test. The runner itself only removes its
+`POLAR_E2E_WORK_DIR` subdirectories and backup objects below two dedicated
+prefixes.
 
 Required environment:
 
@@ -49,12 +55,22 @@ must have `full_page_writes=on` or data checksums, and
 concurrent processes if required by the installed PFSD version.
 
 Optional variables include `POLAR_E2E_RESULTS_DIR`, `POLAR_E2E_WORK_DIR`,
-`POLAR_E2E_LOAD_SQL`, and `POLAR_E2E_DIGEST_SQL`. The default dataset has
-100,000 deterministic rows. For throughput runs, override the load SQL with a
-larger dataset and repeat with selected `WALG_UPLOAD_CONCURRENCY` values. The
-execution order is configurable with `POLAR_E2E_MODES`; benchmark runs should
-be repeated in both orders (and after an explicit host-specific cache reset) to
-avoid giving the second method an advantage from a warm PFS cache.
+`POLAR_E2E_LOAD_SQL`, `POLAR_E2E_ROLLBACK_SQL`,
+`POLAR_E2E_CHECKPOINT_SQL`, `POLAR_E2E_DIGEST_SQL`,
+`POLAR_E2E_ROLLBACK_CHECK_SQL`, and `POLAR_E2E_RECOVERY_CHECK_SQL`. The default
+dataset has 100,000 deterministic rows and a separately rolled-back row. Every
+restored node must be promoted (`NOT pg_is_in_recovery()`) and must preserve
+both the digest and rollback result. For throughput runs, override the load SQL
+with a larger dataset and repeat with selected `WALG_UPLOAD_CONCURRENCY`
+values. The execution order is configurable with `POLAR_E2E_MODES`; benchmark
+runs should be repeated in both orders (and after an explicit host-specific
+cache reset) to avoid giving the second method an advantage from a warm PFS
+cache.
+
+PolarDB commonly uses 1 GiB WAL segments. `pg_backup_stop(false)` makes the
+base backup finish before its stop-LSN segment is necessarily archived, so the
+`wait_backup_ready` hook is part of correctness rather than just timing. Do not
+start restore while the required WAL object is still a temporary upload.
 
 This first harness measures end-to-end time. CPU, PFSD byte counters and peak
 RSS should be added after the lifecycle is stable on the target CI machine;

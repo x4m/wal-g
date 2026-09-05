@@ -3,17 +3,31 @@ set -Eeuo pipefail
 
 hook=$(basename "$0")
 case "${hook}" in
-  preflight|reset_source|stop_restore) ;;
+  preflight|reset_source|stop_restore|wait_backup_ready) ;;
+  reset_restore)
+    : "${1:?mode}" "${2:?restore directory}"
+    ;;
+  restore_pfs_data_path)
+    echo "/fake-pbd/restore-${1:?mode}"
+    ;;
   start_restore)
     : "${1:?mode}"
     ;;
   prepare_restore)
     : "${1:?mode}"
-    [[ -d "${2:?fetched directory}/polar_shared_data" ]]
+    if [[ "$1" == direct_pfsd ]]; then
+      [[ ! -e "${2:?fetched directory}/polar_shared_data" ]]
+    else
+      [[ -d "${2:?fetched directory}/polar_shared_data" ]]
+    fi
     ;;
   digest)
     : "${1:?mode}" "${2:?SQL}"
-    if [[ "$2" == SELECT* ]]; then
+    if [[ "$2" == *pg_is_in_recovery* ]]; then
+      echo t
+    elif [[ "$2" == *100001* && "$2" == SELECT* ]]; then
+      echo 0
+    elif [[ "$2" == SELECT* ]]; then
       echo "100000:1:100000:fake-digest"
     fi
     ;;

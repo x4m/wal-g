@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mode=${1:?mode}
+echo "implement: wait until the ${mode} backup stop-LSN WAL is present in ${WALG_FILE_PREFIX:?}" >&2
+exit 1

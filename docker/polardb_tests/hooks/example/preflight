@@ -6,6 +6,7 @@ set -Eeuo pipefail
 : "${POLAR_SOURCE_PGDATA:?}"
 : "${POLAR_SOURCE_PFS_DATA_PATH:?}"
 : "${WALG_PFS_HOST_ID:?}"
+: "${WALG_PFS_CLUSTER:?}"
 command -v pfsdaemon >/dev/null
 command -v psql >/dev/null
 [[ "$(uname -s)" == Linux ]]
