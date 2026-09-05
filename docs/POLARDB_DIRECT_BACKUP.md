@@ -13,9 +13,16 @@ installed under `/usr/local/polarstore/pfsd`:
 CGO_ENABLED=1 go build -tags pfs -o wal-g-pg-polardb ./main/pg
 ```
 
-The `pfs` build tag, and therefore the CGO and PFSD dependencies, are not part
-of regular WAL-G builds. The experimental `pfsnative` tag targets the legacy
-PFSD protocol and does not support the restore path described below.
+Alternatively, build the native Go PFSD implementation without the C SDK:
+
+```console
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -tags pfsnative -o wal-g-pg-polardb ./main/pg
+```
+
+Both implementations provide the direct backup, restore, `wal-push`, and
+`wal-fetch` paths described below. The `pfs` and `pfsnative` tags are mutually
+exclusive. Neither implementation is part of regular WAL-G builds.
 
 Run `backup-push` with the local compute-node data directory as its argument
 and the shared-data PFS path in `WALG_POLARDB_PFS_DATA_PATH`:
@@ -82,7 +89,8 @@ atomically renames it into place:
 restore_command = 'env WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/restored_shared_data WALG_PFS_CLUSTER=disk WALG_PFS_HOST_ID=3 WALG_FILE_PREFIX=/backup wal-g-pg-polardb wal-fetch %f %p'
 ```
 
-The SDK wrapper chunks large reads and writes to requests of at most 1 MiB,
+Both clients chunk large reads and writes to requests of at most 1 MiB,
 which is compatible with both the public SDK and the validated PFSD fork.
-PFSD lifecycle remains process-global, so one WAL-G process cannot mount two
-different devices or configurations concurrently.
+The C SDK mount lifecycle is process-global. The native client does not use
+the SDK global state, but PFSD still permits only one live process for each
+PBD/host-ID pair.

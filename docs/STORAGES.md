@@ -241,8 +241,8 @@ be installed in `/usr/local/polarstore/pfsd` when WAL-G is linked:
 CGO_ENABLED=1 go build -tags pfs -o wal-g-pg-pfs ./main/pg
 ```
 
-An experimental native Go implementation is also available for Linux/amd64.
-It does not link the PFS C SDK:
+A native Go implementation is also available for Linux/amd64. It provides the
+same WAL-G storage operations without linking the PFS C SDK:
 
 ```console
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags pfsnative -o wal-g-pg-pfsnative ./main/pg
@@ -280,8 +280,9 @@ processes must use different host IDs. For PostgreSQL restore, use `wal-g
 daemon` with `walg-daemon-client` so expected probes for missing WAL/history
 files do not repeatedly mount and unmount PFSD.
 
-The underlying [`pkg/pfsclient`](../pkg/pfsclient/README.md) package is
-independent of WAL-G storage interfaces and can be reused by other Go projects.
+The underlying [`pkg/pfsclient`](../pkg/pfsclient/README.md) C SDK wrapper and
+[`pkg/pfsnative`](../pkg/pfsnative/README.md) native client are independent of
+WAL-G storage interfaces and can be reused by other Go projects.
 
 SSH
 -----------

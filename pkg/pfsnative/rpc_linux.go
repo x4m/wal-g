@@ -202,6 +202,9 @@ func (f *File) ReadContext(ctx context.Context, b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
+	if len(b) > MaxIOSize {
+		b = b[:MaxIOSize]
+	}
 
 	for attempts := 0; attempts < 2; attempts++ {
 		response, data, err := f.client.execute(ctx, requestRead, nil, len(b), func(request []byte) {

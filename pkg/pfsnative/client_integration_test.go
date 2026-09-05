@@ -60,7 +60,7 @@ func TestFilesystemIntegration(t *testing.T) {
 	if err = c.MkdirAll(ctx, dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	payload := bytes.Repeat([]byte("native-pfsd-go\x00"), 8192)
+	payload := bytes.Repeat([]byte("native-pfsd-go\x00"), 192*1024)
 	f, err := c.OpenFile(ctx, original, syscall.O_CREAT|syscall.O_TRUNC|syscall.O_WRONLY, 0o640)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +120,7 @@ func TestMountIntegration(t *testing.T) {
 	defer cancel()
 	c, err := Mount(ctx, Config{
 		ServerDir: serverDir,
+		Cluster:   os.Getenv("PFSNATIVE_TEST_CLUSTER"),
 		PBD:       pbd,
 		HostID:    hostID,
 		Flags:     ReadOnly,

@@ -11,11 +11,14 @@ sequential read/write, rename, and removal.
 4. map and validate all seven shared-memory regions;
 5. signal unmount, close the pidfile, and wait for daemon cleanup.
 
-It is wired into WAL-G with the `pfsnative` build tag. The request path uses atomic request ownership,
-epochs, cancellation via `REQ_ZOMBIE`, and response-state polling. PFSD's own
+It is wired into WAL-G with the `pfsnative` build tag and supports direct
+PolarDB backup, restore, `wal-push`, and `wal-fetch`. The request path uses
+atomic request ownership, epochs, cancellation via `REQ_ZOMBIE`, and
+response-state polling. PFSD's own
 SDK documents the response semaphore as a CPU-usage optimization; completion
 is published through the atomic `REQ_WAIT_RELEASE` state, so the native client
-does not call into glibc to wait. Calls are currently serialized per client.
+does not call into glibc to wait. Mutating calls are serialized per client;
+independent reads can use separate request slots concurrently.
 
 Mutating calls are never automatically replayed after publication. Transient
 write, rename, and directory-operation failures are marked ambiguous because
@@ -49,6 +52,10 @@ Build WAL-G without cgo using:
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -tags pfsnative -o wal-g-pg-pfsnative ./main/pg
 ```
+
+`WALG_PFSD_TIMEOUT` controls mount and implicit file read/write timeouts. I/O
+is split into requests of at most 1 MiB for compatibility with the validated
+PFSD variants.
 
 PFSD permits only one live process for a PBD/host-ID pair. A PostgreSQL
 `archive_command` process therefore needs a host ID different from a

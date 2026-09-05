@@ -10,7 +10,7 @@ storage implementations:
 
 | Area | C SDK (`pfs`) | Native Go (`pfsnative`) |
 |---|---|---|
-| WAL-G PostgreSQL backup/restore E2E | Passed | Passed |
+| WAL-G PostgreSQL backup/restore E2E | Passed | Direct path pending revalidation |
 | Build dependency | C/C++ toolchain and installed PFS SDK | Go toolchain only |
 | Resulting Linux binary | Dynamically linked to glibc | Statically linked |
 | Cross-compilation | Constrained by cgo and PFS SDK | Linux/amd64 from any Go build host |
@@ -18,7 +18,7 @@ storage implementations:
 | PFSD ABI ownership | Upstream SDK | Maintained in the Go module |
 | In-process recovery after mount rejection | Unsafe because SDK state is process-global | Bounded reconnect is supported |
 | Mutating timeout result | Classified as ambiguous | Classified as ambiguous |
-| Concurrency | Upstream SDK channels | Currently serialized per client |
+| Concurrency | Upstream SDK channels | Parallel reads; mutations serialized per client |
 
 Both implementations require distinct PFSD host IDs for simultaneous
 processes accessing the same PBD. PostgreSQL restore should use `wal-g daemon`

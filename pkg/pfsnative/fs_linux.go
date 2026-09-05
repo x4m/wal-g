@@ -9,15 +9,12 @@ import (
 	"io"
 	"path"
 	"syscall"
-	"time"
 )
 
 const (
-	maxIOSize               = 4 * 1024 * 1024
-	direntBufferSize        = 20 * 1024
-	direntSize              = 280
-	direntNameOffset        = 19
-	defaultOperationTimeout = 5 * time.Second
+	direntBufferSize = 20 * 1024
+	direntSize       = 280
+	direntNameOffset = 19
 )
 
 type DirEntry struct {
@@ -28,13 +25,13 @@ type DirEntry struct {
 func (f *File) Name() string { return f.path }
 
 func (f *File) Read(b []byte) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), f.client.timeout)
 	defer cancel()
 	return f.ReadContext(ctx, b)
 }
 
 func (f *File) Write(b []byte) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), f.client.timeout)
 	defer cancel()
 	return f.WriteContext(ctx, b)
 }
@@ -48,45 +45,50 @@ func (f *File) WriteContext(ctx context.Context, b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
-	if len(b) > maxIOSize {
-		return 0, syscall.EFBIG
-	}
 	if f.flags&(syscall.O_WRONLY|syscall.O_RDWR) == 0 {
 		return 0, syscall.EBADF
 	}
 
 	f.client.rpcMu.Lock()
 	defer f.client.rpcMu.Unlock()
-	offset := f.offset
-	if f.flags&syscall.O_APPEND != 0 {
-		offset = -2
+	written := 0
+	for written < len(b) {
+		chunk := b[written:]
+		if len(chunk) > MaxIOSize {
+			chunk = chunk[:MaxIOSize]
+		}
+		offset := f.offset
+		if f.flags&syscall.O_APPEND != 0 {
+			offset = -2
+		}
+		response, _, err := f.client.execute(ctx, requestWrite, chunk, len(chunk), func(request []byte) {
+			copy(request[requestCommonOffset:requestCommonOffset+len(f.common)], f.common[:])
+			putInt64(request, requestPayloadOffset, f.inode)
+			putInt64(request, requestPayloadOffset+8, offset)
+			putUint64(request, requestPayloadOffset+16, uint64(len(chunk)))
+			putInt32(request, requestPayloadOffset+24, int32(f.flags))
+		})
+		if err != nil {
+			return written, mutatingError("write", f.path, err)
+		}
+		if got := int32At(response, 32); got != responseWrite {
+			return written, &RPCError{Op: "write", Path: f.path, Err: fmt.Errorf("unexpected response type %d", got), Ambiguous: true}
+		}
+		n := int64At(response, 168)
+		if n < 0 {
+			return written, classifiedRPCError("write", f.path, responseErrno(response), true)
+		}
+		if n != int64(len(chunk)) {
+			return written + int(n), &RPCError{Op: "write", Path: f.path, Err: io.ErrShortWrite, Ambiguous: true}
+		}
+		if f.flags&syscall.O_APPEND != 0 {
+			f.offset = int64At(response, 176)
+		} else {
+			f.offset += n
+		}
+		written += int(n)
 	}
-	response, _, err := f.client.execute(ctx, requestWrite, b, len(b), func(request []byte) {
-		copy(request[requestCommonOffset:requestCommonOffset+len(f.common)], f.common[:])
-		putInt64(request, requestPayloadOffset, f.inode)
-		putInt64(request, requestPayloadOffset+8, offset)
-		putUint64(request, requestPayloadOffset+16, uint64(len(b)))
-		putInt32(request, requestPayloadOffset+24, int32(f.flags))
-	})
-	if err != nil {
-		return 0, mutatingError("write", f.path, err)
-	}
-	if got := int32At(response, 32); got != responseWrite {
-		return 0, &RPCError{Op: "write", Path: f.path, Err: fmt.Errorf("unexpected response type %d", got), Ambiguous: true}
-	}
-	n := int64At(response, 168)
-	if n < 0 {
-		return 0, classifiedRPCError("write", f.path, responseErrno(response), true)
-	}
-	if n > int64(len(b)) {
-		return 0, &RPCError{Op: "write", Path: f.path, Err: io.ErrShortWrite, Ambiguous: true}
-	}
-	if f.flags&syscall.O_APPEND != 0 {
-		f.offset = int64At(response, 176)
-	} else {
-		f.offset += n
-	}
-	return int(n), nil
+	return written, nil
 }
 
 func (c *Client) Mkdir(ctx context.Context, name string, mode uint32) error {
@@ -140,6 +142,9 @@ func (c *Client) Rename(ctx context.Context, oldName, newName string) error {
 }
 
 func (c *Client) MkdirAll(ctx context.Context, name string, mode uint32) error {
+	if path.Clean(name) == c.pbdRoot {
+		return nil
+	}
 	info, err := c.Stat(ctx, name)
 	if err == nil {
 		if info.IsDir() {

@@ -19,6 +19,8 @@ import (
 const (
 	DefaultServerDir = "/var/run/pfsd"
 	DefaultCluster   = "polarstore"
+	DefaultTimeout   = 5 * time.Second
+	MaxIOSize        = 1 << 20
 
 	ReadOnly  = 0x01 | 0x10
 	ReadWrite = 0x01 | 0x02 | 0x10
@@ -30,11 +32,10 @@ type Config struct {
 	PBD       string
 	HostID    int
 	Flags     int
+	Timeout   time.Duration
 }
 
-// Client is a native-Go PFSD transport connection. This experimental client
-// currently implements the mount lifecycle only; filesystem requests are not
-// implemented yet.
+// Client is a native-Go PFSD transport connection.
 type Client struct {
 	mu       sync.Mutex
 	rpcMu    sync.Mutex
@@ -43,9 +44,11 @@ type Client struct {
 	pidFile  *os.File
 	metaLock *os.File
 	hostLock *os.File
+	pbdRoot  string
 	ack      mountAck
 	mappings [][]byte
 	closed   bool
+	timeout  time.Duration
 }
 
 func Mount(ctx context.Context, cfg Config) (*Client, error) {
@@ -58,6 +61,9 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.Flags == 0 {
 		cfg.Flags = ReadWrite
 	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = DefaultTimeout
+	}
 	if cfg.HostID < 0 || cfg.HostID > int(^uint32(0)>>1) {
 		return nil, fmt.Errorf("PFSD host ID is out of range: %d", cfg.HostID)
 	}
@@ -65,7 +71,11 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	c := &Client{pidPath: filepath.Join(cfg.ServerDir, fmt.Sprintf("%d.pid", os.Getpid()))}
+	c := &Client{
+		pidPath: filepath.Join(cfg.ServerDir, fmt.Sprintf("%d.pid", os.Getpid())),
+		pbdRoot: "/" + cfg.PBD,
+		timeout: cfg.Timeout,
+	}
 	if cfg.Flags&ReadWrite == ReadWrite {
 		if err := c.acquireMountLocks(ctx, cfg.PBD, cfg.HostID); err != nil {
 			return nil, err
@@ -139,7 +149,7 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 		if name == "" {
 			return nil, fmt.Errorf("PFSD shared memory filename %d is empty", i)
 		}
-		mapping, mapErr := mapShm(name, i)
+		mapping, mapErr := mapShm(name)
 		if mapErr != nil {
 			return nil, mapErr
 		}
@@ -326,7 +336,7 @@ func waitMountAck(ctx context.Context, f *os.File, epoch uint32) (mountAck, erro
 	}
 }
 
-func mapShm(name string, expectedIndex int) ([]byte, error) {
+func mapShm(name string) ([]byte, error) {
 	f, err := os.OpenFile(name, os.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open PFSD shared memory %q: %w", name, err)
@@ -350,9 +360,9 @@ func mapShm(name string, expectedIndex int) ([]byte, error) {
 	if err == nil && h.Version != shmVersion {
 		err = fmt.Errorf("unsupported PFSD shared memory %q version: %d", name, h.Version)
 	}
-	if err == nil && h.Index != int32(expectedIndex) {
-		err = fmt.Errorf("unexpected PFSD shared memory %q index: got %d, want %d", name, h.Index, expectedIndex)
-	}
+	// Some PFSD v2 builds leave the optional shared-memory index field zero in
+	// every region. The daemon acknowledgement already supplies the region
+	// names, and request routing uses the validated unit size from each header.
 	if err != nil {
 		_ = unix.Munmap(b)
 		return nil, err
