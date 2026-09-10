@@ -17,6 +17,6 @@ func restorePolarDBSharedDataPlatform(context.Context, string, string) error {
 	return fmt.Errorf("%s restore requires a Linux WAL-G build with CGO and -tags pfs", PolarDBDirectDataPathEnv)
 }
 
-func handlePolarDBWALFetch(context.Context, internal.StorageFolderReader, string) (bool, error) {
+func handlePolarDBWALFetch(context.Context, internal.StorageFolderReader, string, string) (bool, error) {
 	return false, nil
 }

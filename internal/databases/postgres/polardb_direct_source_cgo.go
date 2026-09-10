@@ -161,7 +161,7 @@ func (info cgoPolarDBFileInfo) Mode() fs.FileMode {
 }
 
 func handlePolarDBWALFetch(
-	ctx context.Context, baseReader internal.StorageFolderReader, walFileName string,
+	ctx context.Context, baseReader internal.StorageFolderReader, walFileName, location string,
 ) (bool, error) {
 	root := polarDBDirectDataPath()
 	if root == "" {
@@ -180,7 +180,7 @@ func handlePolarDBWALFetch(
 	}
 	defer utility.LoggedClose(client, "unmount PolarDB WAL destination")
 
-	destination := polarDBWALDestination(root, walFileName)
+	destination := polarDBWALDestination(root, location)
 	if err = client.MkdirAll(path.Dir(destination)); err != nil {
 		return true, fmt.Errorf("create PolarDB WAL directory: %w", err)
 	}
@@ -202,7 +202,7 @@ func handlePolarDBWALFetch(
 		_ = client.Remove(temporary)
 		return true, fmt.Errorf("publish PolarDB WAL: %w", err)
 	}
-	tracelog.InfoLogger.Printf("Fetched WAL %s directly to PolarDB shared storage", walFileName)
+	tracelog.InfoLogger.Printf("Fetched WAL %s directly to PolarDB shared storage at %s", walFileName, destination)
 	return true, nil
 }
 

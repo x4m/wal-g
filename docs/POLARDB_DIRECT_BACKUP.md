@@ -92,10 +92,12 @@ wal-g-pg-polardb backup-fetch /var/lib/polardb/restored LATEST
 The PFS destination must not exist or must be empty. This prevents an
 incomplete restore from being mixed with an older cluster.
 
-During archive recovery, `wal-fetch` maps its destination to
-`$WALG_POLARDB_PFS_DATA_PATH/pg_wal/<wal_name>`. It downloads and decompresses
-the complete WAL segment, writes it through PFSD under a temporary name, and
-atomically renames it into place:
+During archive recovery, `wal-fetch` maps the basename of PostgreSQL's `%p`
+destination to `$WALG_POLARDB_PFS_DATA_PATH/pg_wal/`. It downloads and
+decompresses the complete WAL segment, writes it through PFSD under a
+temporary name, and atomically renames it into place. For example, the normal
+`pg_wal/RECOVERYXLOG` destination is published as
+`$WALG_POLARDB_PFS_DATA_PATH/pg_wal/RECOVERYXLOG`:
 
 ```conf
 restore_command = 'env WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/restored_shared_data WALG_PFS_CLUSTER=disk WALG_PFS_HOST_ID=3 WALG_FILE_PREFIX=/backup wal-g-pg-polardb wal-fetch %f %p'
