@@ -15,10 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/wal-g/tracelog"
 	"github.com/wal-g/wal-g/internal"
+	conf "github.com/wal-g/wal-g/internal/config"
 	"github.com/wal-g/wal-g/pkg/pfsclient"
 	"github.com/wal-g/wal-g/utility"
 )
@@ -43,24 +43,25 @@ func openCGOPFSClient(root string, readOnly bool) (*pfsclient.Client, string, er
 		return nil, "", fmt.Errorf("%s must be /<device>/<polar-data-path>, got %q", PolarDBDirectDataPathEnv, root)
 	}
 	hostID := pfsclient.DefaultHostID
-	if value := os.Getenv("WALG_PFS_HOST_ID"); value != "" {
+	if value, ok := conf.GetSetting(conf.PFSHostIDSetting); ok {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed < 0 {
-			return nil, "", fmt.Errorf("parse WALG_PFS_HOST_ID: expected a non-negative integer, got %q", value)
+			return nil, "", fmt.Errorf("parse %s: expected a non-negative integer, got %q", conf.PFSHostIDSetting, value)
 		}
 		hostID = parsed
 	}
-	timeout := pfsclient.DefaultTimeout
-	if value := os.Getenv("WALG_PFSD_TIMEOUT"); value != "" {
-		parsed, err := time.ParseDuration(value)
-		if err != nil || parsed <= 0 {
-			return nil, "", fmt.Errorf("parse WALG_PFSD_TIMEOUT: expected a positive duration, got %q", value)
-		}
-		timeout = parsed
+	timeout, err := conf.GetDurationSettingDefault(conf.PFSDTimeoutSetting, pfsclient.DefaultTimeout)
+	if err != nil {
+		return nil, "", err
 	}
+	if timeout <= 0 {
+		return nil, "", fmt.Errorf("%s must be positive, got %s", conf.PFSDTimeoutSetting, timeout)
+	}
+	cluster, _ := conf.GetSetting(conf.PFSClusterSetting)
+	server, _ := conf.GetSetting(conf.PFSDServerAddressSetting)
 	client, err := pfsclient.Open(pfsclient.Config{
-		Device: parts[0], Cluster: os.Getenv("WALG_PFS_CLUSTER"), HostID: hostID,
-		Server: os.Getenv("WALG_PFSD_SERVER_ADDR"), Timeout: timeout, ReadOnly: readOnly,
+		Device: parts[0], Cluster: cluster, HostID: hostID,
+		Server: server, Timeout: timeout, ReadOnly: readOnly,
 	})
 	if err != nil {
 		return nil, "", err

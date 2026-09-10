@@ -1,9 +1,14 @@
 # Native Go PFSD client
 
-This package is an experimental, cgo-free implementation of the PFSD shared
-memory transport. It implements the connection lifecycle and the filesystem
+This package is an experimental, cgo-free implementation of the PFSD
+transports. It implements the connection lifecycle and the filesystem
 operations needed by WAL-G: stat, directory listing and mutation, open,
 sequential read/write, rename, and removal.
+
+When `/var/run/pfsd-<pbd>.socket` exists, the client automatically uses the
+socket/memfd transport: it receives daemon queues via `SCM_RIGHTS`, registers
+its shared request and I/O buffers, and submits requests through the shared
+MPMC queue. Otherwise it falls back to the legacy lifecycle:
 
 1. create and lock the SDK pidfile;
 2. send the mount request using the PFSD v2 binary layout;
@@ -24,10 +29,10 @@ Mutating calls are never automatically replayed after publication. Transient
 write, rename, and directory-operation failures are marked ambiguous because
 the daemon may have completed them before the client lost the response.
 
-The client is intentionally restricted to Linux/amd64. The pidfile protocol
-itself is simple, but the mapped structures use the platform C ABI (`size_t`,
-`sem_t`, atomics, and alignment). Supporting another architecture requires ABI
-validation against the exact PFSD build.
+The client is intentionally restricted to Linux/amd64. Both transports map
+structures that use the platform C ABI (`size_t`, `sem_t`, atomics, and
+alignment). Supporting another architecture requires ABI validation against
+the corresponding PFSD build.
 
 Run the real-daemon test with:
 
@@ -43,8 +48,10 @@ go test -mod=mod ./pkg/pfsnative -run TestMountIntegration -v
 
 Use a host ID reserved for the test. The client acquires the same
 `/var/run/pfs/<pbd>-paxos-hostid` range locks as the C SDK.
-Unlike the C SDK setting, `ServerDir` is the final watched PBD directory (for
-example `/var/run/pfsd/vdb`), not its parent.
+For the legacy transport, `ServerDir` is the final watched PBD directory (for
+example `/var/run/pfsd/vdb`), not its parent. A value ending in `.socket`
+selects that socket explicitly; otherwise the socket transport probes the
+standard `/var/run/pfsd-<pbd>.socket` path before falling back to `ServerDir`.
 
 Build WAL-G without cgo using:
 

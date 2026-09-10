@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	client "github.com/wal-g/wal-g/pkg/pfsnative"
@@ -40,8 +41,12 @@ func newStorage(ctx context.Context, cfg config, rootWraps ...storage.WrapRootFo
 	var pfsClient *client.Client
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
+		serverAddress := server
+		if !strings.HasSuffix(serverAddress, ".socket") {
+			serverAddress = path.Join(serverAddress, cfg.PBDName)
+		}
 		pfsClient, err = client.Mount(mountCtx, client.Config{
-			ServerDir: path.Join(server, cfg.PBDName), Cluster: cfg.Cluster,
+			ServerDir: serverAddress, Cluster: cfg.Cluster,
 			PBD: cfg.PBDName, HostID: cfg.HostID, Flags: client.ReadWrite,
 		})
 		if err == nil {

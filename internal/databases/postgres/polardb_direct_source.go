@@ -3,12 +3,13 @@ package postgres
 import (
 	"context"
 	"io"
-	"os"
 	"path"
 	"strings"
+
+	conf "github.com/wal-g/wal-g/internal/config"
 )
 
-const PolarDBDirectDataPathEnv = "WALG_POLARDB_PFS_DATA_PATH"
+const PolarDBDirectDataPathEnv = conf.PolarDBPFSDataPath
 
 type polarDBDirectSource interface {
 	AddToBundle(context.Context, *Bundle, string) error
@@ -23,7 +24,10 @@ type polarDBDirectWalkStats struct {
 	hasPgControl  bool
 }
 
-func polarDBDirectDataPath() string { return os.Getenv(PolarDBDirectDataPathEnv) }
+func polarDBDirectDataPath() string {
+	value, _ := conf.GetSetting(PolarDBDirectDataPathEnv)
+	return value
+}
 
 func polarDBWALDestination(root, walFileName string) string {
 	return path.Join("/"+strings.TrimLeft(root, "/"), "pg_wal", path.Base(walFileName))

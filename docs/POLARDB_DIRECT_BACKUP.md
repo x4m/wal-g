@@ -35,6 +35,18 @@ export WALG_S3_PREFIX=s3://example/polardb
 wal-g-pg-polardb backup-push "$PGDATA"
 ```
 
+As with other WAL-G settings, these values can instead be placed in the WAL-G
+configuration file, for example:
+
+```json
+{
+  "WALG_POLARDB_PFS_DATA_PATH": "/vdb/polar/shared_data",
+  "WALG_PFS_CLUSTER": "disk",
+  "WALG_PFS_HOST_ID": 2,
+  "WALG_PFSD_SERVER_ADDR": "/var/run/pfsd-vdb.socket"
+}
+```
+
 The direct source is mounted read-only. Multiple tar workers can issue PFSD
 reads concurrently and upload/compress different files in parallel. Local
 compute-node files keep their normal paths; shared files are stored below

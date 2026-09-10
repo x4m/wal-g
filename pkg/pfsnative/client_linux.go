@@ -49,6 +49,7 @@ type Client struct {
 	mappings [][]byte
 	closed   bool
 	timeout  time.Duration
+	socket   *socketTransport
 }
 
 func Mount(ctx context.Context, cfg Config) (*Client, error) {
@@ -69,6 +70,17 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	if _, err := encodeMountRequest(mountRequest{Cluster: cfg.Cluster, PBD: cfg.PBD}); err != nil {
 		return nil, err
+	}
+
+	// Recent PFSD versions expose a Unix-socket/memfd transport. Prefer it
+	// when its well-known socket exists, while retaining compatibility with
+	// the older pidfile/shared-memory protocol below.
+	if socketPath := socketPathFor(cfg); socketPath != "" {
+		if _, err := os.Stat(socketPath); err == nil {
+			return mountSocket(ctx, cfg, socketPath)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect PFSD socket %q: %w", socketPath, err)
+		}
 	}
 
 	c := &Client{
@@ -178,8 +190,13 @@ func (e *DaemonError) Unwrap() error {
 	return syscall.Errno(-e.Code)
 }
 
-func (c *Client) ConnectionID() int32 { return c.ack.ConnectID }
-func (c *Client) MountID() int32      { return c.ack.MountID }
+func (c *Client) ConnectionID() int32 {
+	if c.socket != nil {
+		return int32(c.socket.connectionID)
+	}
+	return c.ack.ConnectID
+}
+func (c *Client) MountID() int32 { return c.ack.MountID }
 
 func (c *Client) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -203,6 +220,11 @@ func (c *Client) close(ctx context.Context, signalUnmount, wait bool) error {
 	}
 	c.closed = true
 	defer c.closeMountLocks()
+	if c.socket != nil {
+		err := c.socket.close()
+		c.socket = nil
+		return err
+	}
 
 	var errs []error
 	for _, mapping := range c.mappings {

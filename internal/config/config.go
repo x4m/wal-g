@@ -79,6 +79,11 @@ const (
 	PgpEnvelopeCacheExpiration    = "WALG_ENVELOPE_CACHE_EXPIRATION"
 	DirectIO                      = "WALG_DIRECT_IO"
 	DirectIOBlockCountSetting     = "WALG_DIRECT_IO_BLOCK_COUNT"
+	PFSPrefixSetting              = "WALG_PFS_PREFIX"
+	PFSClusterSetting             = "WALG_PFS_CLUSTER"
+	PFSHostIDSetting              = "WALG_PFS_HOST_ID"
+	PFSDServerAddressSetting      = "WALG_PFSD_SERVER_ADDR"
+	PFSDTimeoutSetting            = "WALG_PFSD_TIMEOUT"
 
 	PgDataSetting           = "PGDATA"
 	UserSetting             = "USER" // TODO : do something with it
@@ -97,6 +102,7 @@ const (
 	PgWalSize               = "WALG_PG_WAL_SIZE"
 	PgWalPageSize           = "WALG_PG_WAL_PAGE_SIZE"
 	PgBlockSize             = "WALG_PG_BLOCK_SIZE"
+	PolarDBPFSDataPath      = "WALG_POLARDB_PFS_DATA_PATH"
 	TotalBgUploadedLimit    = "TOTAL_BG_UPLOADED_LIMIT"
 	NameStreamCreateCmd     = "WALG_STREAM_CREATE_COMMAND"
 	NameStreamRestoreCmd    = "WALG_STREAM_RESTORE_COMMAND"
@@ -502,11 +508,11 @@ var (
 		"WALG_FILE_PREFIX": true,
 
 		// PolarDB File System
-		"WALG_PFS_PREFIX":       true,
-		"WALG_PFS_CLUSTER":      true,
-		"WALG_PFS_HOST_ID":      true,
-		"WALG_PFSD_SERVER_ADDR": true,
-		"WALG_PFSD_TIMEOUT":     true,
+		PFSPrefixSetting:         true,
+		PFSClusterSetting:        true,
+		PFSHostIDSetting:         true,
+		PFSDServerAddressSetting: true,
+		PFSDTimeoutSetting:       true,
 
 		// GOLANG
 		GoMaxProcs: true,
@@ -535,6 +541,7 @@ var (
 		PgWalSize:                            true,
 		PgWalPageSize:                        true,
 		PgBlockSize:                          true,
+		PolarDBPFSDataPath:                   true,
 		PrefetchDir:                          true,
 		PgReadyRename:                        true,
 		PgBackRestStanza:                     true,

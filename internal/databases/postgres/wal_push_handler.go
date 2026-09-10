@@ -52,6 +52,13 @@ func HandleWALPush(ctx context.Context, uploader *WalUploader, walFilePath strin
 	// .history files must not be overwritten, see https://github.com/wal-g/wal-g/issues/420
 	preventWalOverwrite := viper.GetBool(conf.PreventWalOverwriteSetting) || strings.HasSuffix(walFilePath, ".history")
 	readyRename := viper.GetBool(conf.PgReadyRename)
+	// The background uploader scans pg_wal/archive_status through os.ReadDir.
+	// A direct PFSD path is not mounted in the local namespace, so only the
+	// explicitly requested WAL can be uploaded until that scanner has a
+	// storage-aware directory abstraction.
+	if isPolarDBDirectPath(walFilePath) {
+		concurrency = 1
+	}
 
 	uploadStart := time.Now()
 	bgUploader := NewBgUploader(ctx, walFilePath, int32(concurrency-1), totalBgUploadedLimit-1, uploader, preventWalOverwrite, readyRename)
@@ -105,14 +112,13 @@ func uploadWALFile(ctx context.Context, uploader *WalUploader, walFilePath strin
 }
 
 func openWalFile(ctx context.Context, walFilePath string) (io.ReadCloser, func(), error) {
-	directRoot := polarDBDirectDataPath()
-	cleanPath := filepath.ToSlash(filepath.Clean(walFilePath))
-	cleanRoot := filepath.ToSlash(filepath.Clean(directRoot))
-	if directRoot == "" || (cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, strings.TrimRight(cleanRoot, "/")+"/")) {
+	if !isPolarDBDirectPath(walFilePath) {
 		file, err := os.Open(walFilePath)
 		return file, func() {}, err
 	}
 
+	directRoot := polarDBDirectDataPath()
+	cleanPath := filepath.ToSlash(filepath.Clean(walFilePath))
 	source, err := openPolarDBDirectSource(ctx, directRoot)
 	if err != nil {
 		return nil, func() {}, err
@@ -123,6 +129,16 @@ func openWalFile(ctx context.Context, walFilePath string) (io.ReadCloser, func()
 		return nil, func() {}, err
 	}
 	return file, func() { _ = source.Close() }, nil
+}
+
+func isPolarDBDirectPath(name string) bool {
+	directRoot := polarDBDirectDataPath()
+	if directRoot == "" {
+		return false
+	}
+	cleanPath := filepath.ToSlash(filepath.Clean(name))
+	cleanRoot := filepath.ToSlash(filepath.Clean(directRoot))
+	return cleanPath == cleanRoot || strings.HasPrefix(cleanPath, strings.TrimRight(cleanRoot, "/")+"/")
 }
 
 // TODO : unit tests

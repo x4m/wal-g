@@ -14,10 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/wal-g/tracelog"
 	"github.com/wal-g/wal-g/internal"
+	conf "github.com/wal-g/wal-g/internal/config"
 	"github.com/wal-g/wal-g/pkg/pfsnative"
 	"github.com/wal-g/wal-g/utility"
 )
@@ -42,20 +42,19 @@ func openNativePFSClient(ctx context.Context, root string, readOnly bool) (*pfsn
 		return nil, "", fmt.Errorf("%s must be /<device>/<polar-data-path>, got %q", PolarDBDirectDataPathEnv, root)
 	}
 	hostID := 1
-	if value := os.Getenv("WALG_PFS_HOST_ID"); value != "" {
+	if value, ok := conf.GetSetting(conf.PFSHostIDSetting); ok {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed < 0 {
-			return nil, "", fmt.Errorf("parse WALG_PFS_HOST_ID: expected a non-negative integer, got %q", value)
+			return nil, "", fmt.Errorf("parse %s: expected a non-negative integer, got %q", conf.PFSHostIDSetting, value)
 		}
 		hostID = parsed
 	}
-	timeout := pfsnative.DefaultTimeout
-	if value := os.Getenv("WALG_PFSD_TIMEOUT"); value != "" {
-		parsed, err := time.ParseDuration(value)
-		if err != nil || parsed <= 0 {
-			return nil, "", fmt.Errorf("parse WALG_PFSD_TIMEOUT: expected a positive duration, got %q", value)
-		}
-		timeout = parsed
+	timeout, err := conf.GetDurationSettingDefault(conf.PFSDTimeoutSetting, pfsnative.DefaultTimeout)
+	if err != nil {
+		return nil, "", err
+	}
+	if timeout <= 0 {
+		return nil, "", fmt.Errorf("%s must be positive, got %s", conf.PFSDTimeoutSetting, timeout)
 	}
 	flags := pfsnative.ReadWrite
 	if readOnly {
@@ -63,9 +62,10 @@ func openNativePFSClient(ctx context.Context, root string, readOnly bool) (*pfsn
 	}
 	mountCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	cluster, _ := conf.GetSetting(conf.PFSClusterSetting)
 	client, err := pfsnative.Mount(mountCtx, pfsnative.Config{
 		ServerDir: polarDBPFSDServerDir(parts[0]),
-		Cluster:   os.Getenv("WALG_PFS_CLUSTER"),
+		Cluster:   cluster,
 		PBD:       parts[0],
 		HostID:    hostID,
 		Flags:     flags,
@@ -78,9 +78,12 @@ func openNativePFSClient(ctx context.Context, root string, readOnly bool) (*pfsn
 }
 
 func polarDBPFSDServerDir(pbd string) string {
-	server := os.Getenv("WALG_PFSD_SERVER_ADDR")
+	server, _ := conf.GetSetting(conf.PFSDServerAddressSetting)
 	if server == "" {
 		server = pfsnative.DefaultServerDir
+	}
+	if strings.HasSuffix(server, ".socket") {
+		return server
 	}
 	return path.Join(server, pbd)
 }
@@ -221,7 +224,10 @@ func copyLocalFileToNativePFS(
 	if err != nil {
 		return fmt.Errorf("create restored PolarDB file %q: %w", destination, err)
 	}
-	_, copyErr := io.CopyBuffer(target, source, make([]byte, pfsnative.MaxIOSize))
+	// Hide os.File.WriteTo so io.CopyBuffer uses the PFSD-sized buffer below.
+	// Otherwise the standard library bypasses it and issues 32 KiB writes,
+	// multiplying the number of daemon round trips during a restore.
+	_, copyErr := io.CopyBuffer(target, struct{ io.Reader }{source}, make([]byte, pfsnative.MaxIOSize))
 	closeErr := target.Close()
 	if copyErr != nil {
 		return fmt.Errorf("write restored PolarDB file %q: %w", destination, copyErr)

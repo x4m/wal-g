@@ -263,6 +263,11 @@ func (c *Client) execute(ctx context.Context, requestType int32, payload []byte,
 		c.mu.Unlock()
 		return nil, nil, os.ErrClosed
 	}
+	if c.socket != nil {
+		transport := c.socket
+		c.mu.Unlock()
+		return transport.execute(ctx, requestType, payload, bufferSize, fill)
+	}
 	mapping, header, err := selectMapping(c.mappings, bufferSize)
 	if err != nil {
 		c.mu.Unlock()
