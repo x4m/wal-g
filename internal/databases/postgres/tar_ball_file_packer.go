@@ -173,6 +173,19 @@ func (p *TarBallFilePackerImpl) createFileReadCloser(ctx context.Context, cfi *i
 	} else {
 		if cfi.Open != nil {
 			fileReadCloser, err = cfi.Open(ctx)
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, internal.NewFileNotExistError(cfi.Path)
+			}
+			if err == nil {
+				// Match StartReadingFile for a hot non-POSIX source: ignore
+				// extensions after stat, and pad concurrent truncation. WAL
+				// recovery supplies the subsequent relation changes. Only EOF
+				// is padded; transport and I/O errors must still fail backup.
+				fileReadCloser = &ioextensions.ReadCascadeCloser{
+					Reader: io.LimitReader(io.MultiReader(fileReadCloser, &ioextensions.ZeroReader{}), cfi.Header.Size),
+					Closer: fileReadCloser,
+				}
+			}
 		} else {
 			fileReadCloser, err = internal.StartReadingFile(ctx, cfi.Header, cfi.FileInfo, cfi.Path)
 		}

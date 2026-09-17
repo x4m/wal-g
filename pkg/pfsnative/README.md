@@ -60,7 +60,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -tags pfsnative -o wal-g-pg-pfsnative ./main/pg
 ```
 
-`WALG_PFSD_TIMEOUT` controls mount and implicit file read/write timeouts. I/O
+`WALG_PFSD_TIMEOUT` controls mount and filesystem request timeouts. I/O
 is split into requests of at most 1 MiB for compatibility with the validated
 PFSD variants.
 
@@ -69,3 +69,16 @@ PFSD permits only one live process for a PBD/host-ID pair. A PostgreSQL
 simultaneous `backup-push`. For restore, prefer `wal-g daemon` plus
 `walg-daemon-client`: PostgreSQL routinely probes missing WAL/history files,
 and a long-lived daemon keeps one mount across those expected failures.
+
+## Failure handling
+
+Mount and filesystem requests honor `Config.Timeout` as well as a shorter
+caller deadline. An explicit `.socket` address never falls back to the legacy
+pidfile transport. After a socket request times out with an unknown outcome,
+the client is unusable: close it and mount a new client. `IsAmbiguous(err)`
+identifies this case. Do not blindly retry a write or rename: it may already
+have completed. In-flight request buffers are not reused after a timeout.
+
+Writable mounts use Linux OFD range locks, which conflict with the SDK's POSIX
+range locks and also protect distinct clients in the same Go process. The
+metadata range is released after mount; the host-ID range is held until Close.

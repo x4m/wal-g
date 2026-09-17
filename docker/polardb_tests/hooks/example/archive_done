@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Arguments: source, WAL filename. Use the PFSD SDK to check the shared
+# pg_wal/archive_status/<WAL>.done file and print t or f. Do not create/rename
+# status files or upload WAL here. pg_ls_archive_statusdir may inspect only
+# compute-local pg_wal on some server versions.
+echo 'Implement read-only archive_done for this disposable PFSD environment' >&2
+exit 2

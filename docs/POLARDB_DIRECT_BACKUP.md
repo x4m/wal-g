@@ -60,12 +60,21 @@ PolarDB 17 does not allow WAL-G to change this parameter in a session. The
 backup is rejected when both `full_page_writes` and data checksums are
 disabled.
 
-For direct backups WAL-G calls `pg_backup_stop(false)` on PostgreSQL 15+ (as it
-already does with `pg_stop_backup(false)` on 9.6-14), so completion does not
-wait for the required WAL segment to reach the archive. WAL archiving must
+Direct backups preserve PostgreSQL's archive wait by default. Set
+`WALG_STOP_BACKUP_WAIT_FOR_ARCHIVE=false` in the environment or configuration
+file to opt out. On PG 15+ this selects `pg_backup_stop(false)`; on PG 9.6-14 it
+selects `pg_stop_backup(false, false)` (the first boolean means non-exclusive).
+This setting controls archive waiting, not WAL switching. WAL archiving must
 remain configured and monitored: the base backup is not recoverable until its
-stop-LSN WAL is present. WAL-G logs the number and total size of files found in
+required WAL is present. WAL-G logs the number and total size of files found in
 the PFS root and rejects a root without `global/pg_control` or non-empty files.
+
+Direct backup currently requires the RW primary. All direct backup invocations
+for a cluster must use the same `PGDATABASE`: a database-local advisory lock
+serializes them through sentinel publication. A competing invocation fails
+without terminating the first one. Existing backup names (including partial
+uploads) are rejected before uploading data. Use a dedicated repository prefix
+per cluster. Standby/cross-compute coordination is not supported yet.
 
 The same `WALG_POLARDB_PFS_DATA_PATH` setting makes `wal-push` read an archive
 source path below the shared-data root through PFSD. Set upload concurrency to

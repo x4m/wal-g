@@ -65,6 +65,8 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = DefaultTimeout
 	}
+	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	defer cancel()
 	if cfg.HostID < 0 || cfg.HostID > int(^uint32(0)>>1) {
 		return nil, fmt.Errorf("PFSD host ID is out of range: %d", cfg.HostID)
 	}
@@ -76,6 +78,11 @@ func Mount(ctx context.Context, cfg Config) (*Client, error) {
 	// when its well-known socket exists, while retaining compatibility with
 	// the older pidfile/shared-memory protocol below.
 	if socketPath := socketPathFor(cfg); socketPath != "" {
+		if filepath.Ext(cfg.ServerDir) == ".socket" {
+			// An explicit socket address must not silently select the legacy
+			// pidfile protocol when the daemon is down or restarting.
+			return mountSocket(ctx, cfg, socketPath)
+		}
 		if _, err := os.Stat(socketPath); err == nil {
 			return mountSocket(ctx, cfg, socketPath)
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -273,13 +280,17 @@ func (c *Client) close(ctx context.Context, signalUnmount, wait bool) error {
 
 func (c *Client) acquireMountLocks(ctx context.Context, pbd string, hostID int) error {
 	lockPath := filepath.Join("/var/run/pfs", pbd+"-paxos-hostid")
+	return c.acquireMountLocksAt(ctx, lockPath, hostID)
+}
+
+func (c *Client) acquireMountLocksAt(ctx context.Context, lockPath string, hostID int) error {
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o666)
 	if err != nil {
 		return fmt.Errorf("open PFSD host-ID lock %q: %w", lockPath, err)
 	}
 	c.metaLock = f
 	for {
-		err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &unix.Flock_t{
+		err = unix.FcntlFlock(f.Fd(), unix.F_OFD_SETLK, &unix.Flock_t{
 			Type: unix.F_WRLCK, Whence: io.SeekStart, Start: 255 * 1024, Len: 1024,
 		})
 		if err == nil {
@@ -305,9 +316,15 @@ func (c *Client) acquireMountLocks(ctx context.Context, pbd string, hostID int) 
 	c.hostLock = host
 	length := int64(1024)
 	if hostID == 0 {
+		// The exclusive host-zero lock covers metadata too. OFD locks on
+		// separate descriptors conflict even within this process.
+		_ = c.metaLock.Close()
+		c.metaLock = nil
 		length = 0
 	}
-	err = unix.FcntlFlock(host.Fd(), unix.F_SETLK, &unix.Flock_t{
+	// OFD locks survive closing another descriptor for the same inode and
+	// prevent two clients in this process from claiming the same host ID.
+	err = unix.FcntlFlock(host.Fd(), unix.F_OFD_SETLK, &unix.Flock_t{
 		Type: unix.F_WRLCK, Whence: io.SeekStart, Start: int64(hostID) * 1024, Len: length,
 	})
 	if err != nil {

@@ -117,6 +117,16 @@ Examples:
 - `10s` - 10 seconds timeout
 - `10m` - 10 minutes timeout
 
+* `WALG_STOP_BACKUP_WAIT_FOR_ARCHIVE`
+
+Whether local `backup-push` waits for the required WAL to be archived in
+`pg_backup_stop` / `pg_stop_backup`. Default: `true`, including direct PolarDB
+backups. Set to `false` only if you independently ensure the required WAL is in
+the archive before using the backup. This does not disable WAL switching and
+does not apply to streaming `BASE_BACKUP`. Disabling the wait requires PG 9.6+.
+Accepted through environment variables or the WAL-G configuration file, e.g.
+`"WALG_STOP_BACKUP_WAIT_FOR_ARCHIVE": false` in JSON. Invalid values are errors.
+
 
 Usage
 -----

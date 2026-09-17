@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/wal-g/tracelog"
 	"github.com/wal-g/wal-g/internal"

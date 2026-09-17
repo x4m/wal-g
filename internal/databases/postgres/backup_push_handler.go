@@ -167,6 +167,7 @@ func (bh *BackupHandler) createAndPushBackup(ctx context.Context) {
 
 	err = bh.startBackup(ctx)
 	tracelog.ErrorLogger.FatalOnError(err)
+	defer utility.LoggedCloseContext(context.Background(), bh.Workers.QueryRunner.Connection, "backup connection")
 	err = bh.checkDataChecksums(ctx)
 	tracelog.ErrorLogger.FatalOnError(err)
 	err = bh.CheckArchiveCommand(ctx)
@@ -178,6 +179,10 @@ func (bh *BackupHandler) createAndPushBackup(ctx context.Context) {
 	}
 	err = bh.handleDeltaBackup(ctx, folder)
 	tracelog.ErrorLogger.FatalOnError(err)
+	if polarDBDirectDataPath() != "" {
+		err = checkPolarDBBackupNameAvailable(ctx, bh.Arguments.Uploader.Folder(), bh.CurBackupInfo.Name)
+		tracelog.ErrorLogger.FatalOnError(err)
+	}
 	tarFileSets := bh.uploadBackup(ctx)
 	sentinelDto, filesMetaDto, err := bh.setupDTO(ctx, tarFileSets)
 	tracelog.ErrorLogger.FatalOnError(err)
@@ -205,7 +210,9 @@ func (bh *BackupHandler) startBackup(ctx context.Context) error {
 		return fmt.Errorf("failed to build query runner: %v", err)
 	}
 	if polarDBDirectDataPath() != "" {
-		bh.Workers.QueryRunner.DisableStopBackupArchiveWait()
+		if err := bh.Workers.QueryRunner.lockPolarDBDirectBackup(ctx); err != nil {
+			return err
+		}
 		if err := bh.Workers.QueryRunner.EnablePolarBackupWalSwitch(ctx); err != nil {
 			return err
 		}
@@ -223,7 +230,7 @@ func (bh *BackupHandler) startBackup(ctx context.Context) error {
 	}
 
 	// If preventConcurrentBackups is set to true, we need to ensure that no backups are in progress
-	if bh.Arguments.preventConcurrentBackups {
+	if bh.Arguments.preventConcurrentBackups && polarDBDirectDataPath() == "" {
 		err = bh.Workers.QueryRunner.TryGetLock(ctx)
 		if err != nil {
 			tracelog.WarningLogger.Println("Failed to get advisory lock")

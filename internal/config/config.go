@@ -118,6 +118,7 @@ const (
 	StatsdExtraTagsSetting               = "WALG_STATSD_EXTRA_TAGS"
 	PgAliveCheckInterval                 = "WALG_ALIVE_CHECK_INTERVAL"
 	PgStopBackupTimeout                  = "WALG_STOP_BACKUP_TIMEOUT"
+	PgStopBackupWaitForArchive           = "WALG_STOP_BACKUP_WAIT_FOR_ARCHIVE"
 	FailoverStorages                     = "WALG_FAILOVER_STORAGES"
 	FailoverStoragesCheck                = "WALG_FAILOVER_STORAGES_CHECK"
 	FailoverStoragesCheckTimeout         = "WALG_FAILOVER_STORAGES_CHECK_TIMEOUT"
@@ -547,6 +548,7 @@ var (
 		PgBackRestStanza:                     true,
 		PgAliveCheckInterval:                 true,
 		PgStopBackupTimeout:                  true,
+		PgStopBackupWaitForArchive:           true,
 		FailoverStorages:                     true,
 		FailoverStoragesCheck:                true,
 		FailoverStoragesCheckTimeout:         true,

@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
@@ -57,4 +58,13 @@ func getStopBackupTimeoutSetting() (time.Duration, error) {
 	}
 
 	return timeout, nil
+}
+
+func (queryRunner *PgQueryRunner) configureStopBackupArchiveWait() error {
+	wait, err := conf.GetBoolSettingDefault(conf.PgStopBackupWaitForArchive, true)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", conf.PgStopBackupWaitForArchive, err)
+	}
+	queryRunner.SetStopBackupArchiveWait(wait)
+	return nil
 }

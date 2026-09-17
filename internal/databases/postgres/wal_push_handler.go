@@ -104,6 +104,7 @@ func uploadWALFile(ctx context.Context, uploader *WalUploader, walFilePath strin
 		return errors.Wrapf(err, "upload: could not open '%s'\n", walFilePath)
 	}
 	defer closeSource()
+	defer walFile.Close()
 	err = uploader.UploadWalFile(ctx, ioextensions.NewNamedReaderImpl(walFile, walFilePath))
 	if err != nil {
 		return errors.Wrapf(err, "upload: could not Upload '%s'\n", walFilePath)
@@ -152,19 +153,42 @@ func checkWALOverwrite(ctx context.Context, uploader *WalUploader, walFilePath s
 		return false, err
 	}
 
-	archived, err := io.ReadAll(walFileReader)
+	defer walFileReader.Close()
+	walFile, closeSource, err := openWalFile(ctx, walFilePath)
 	if err != nil {
 		return false, err
 	}
+	defer closeSource()
+	defer walFile.Close()
 
-	localBytes, err := os.ReadFile(walFilePath)
+	equal, err := equalWALContents(walFileReader, walFile)
 	if err != nil {
 		return false, err
 	}
-
-	if !bytes.Equal(archived, localBytes) {
+	if !equal {
 		return true, newCantOverwriteWalFileError(walFilePath)
 	}
 	tracelog.InfoLogger.Printf("WAL file '%s' already archived with equal content, skipping", walFilePath)
 	return true, nil
+}
+
+// PolarDB WAL segments may be 1 GiB. Compare incrementally instead of retaining
+// both decompressed files in memory. ReadFull tolerates differing chunk sizes.
+func equalWALContents(a, b io.Reader) (bool, error) {
+	left, right := make([]byte, 1024*1024), make([]byte, 1024*1024)
+	for {
+		n, errA := io.ReadFull(a, left)
+		m, errB := io.ReadFull(b, right)
+		for _, err := range []error{errA, errB} {
+			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+				return false, err
+			}
+		}
+		if n != m || !bytes.Equal(left[:n], right[:m]) {
+			return false, nil
+		}
+		if errA != nil || errB != nil {
+			return true, nil
+		}
+	}
 }

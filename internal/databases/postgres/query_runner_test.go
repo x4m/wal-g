@@ -61,7 +61,7 @@ func TestBuildStopBackup(t *testing.T) {
 	queryString, err = queryBuilder.BuildStopBackup()
 	assert.Equal(t, "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_backup_stop()", queryString)
 
-	queryBuilder.DisableStopBackupArchiveWait()
+	queryBuilder.SetStopBackupArchiveWait(false)
 	queryString, err = queryBuilder.BuildStopBackup()
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_backup_stop(false)", queryString)

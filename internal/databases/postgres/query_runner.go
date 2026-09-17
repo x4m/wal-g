@@ -71,12 +71,10 @@ type PgQueryRunner struct {
 	Mu                sync.Mutex
 }
 
-// DisableStopBackupArchiveWait makes PostgreSQL 15+ consistent with the
-// pg_stop_backup(false) call WAL-G already uses for PostgreSQL 9.6-14.
-// The required WAL is still archived by archive_command, but backup-push does
-// not block waiting for a large PolarDB WAL segment to be archived.
-func (queryRunner *PgQueryRunner) DisableStopBackupArchiveWait() {
-	queryRunner.stopBackupNoWait = true
+// SetStopBackupArchiveWait controls waiting for WAL archiving, not WAL switching.
+// The zero-value runner preserves PostgreSQL's default of waiting for archiving.
+func (queryRunner *PgQueryRunner) SetStopBackupArchiveWait(wait bool) {
+	queryRunner.stopBackupNoWait = !wait
 }
 
 // BuildGetVersion formats a query to retrieve PostgreSQL numeric version
@@ -137,8 +135,14 @@ func (queryRunner *PgQueryRunner) BuildStopBackup() (string, error) {
 		}
 		return "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_backup_stop()", nil
 	case queryRunner.Version >= 90600:
+		if queryRunner.stopBackupNoWait {
+			return "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_stop_backup(false, false)", nil
+		}
 		return "SELECT labelfile, spcmapfile, lsn FROM pg_catalog.pg_stop_backup(false)", nil
 	case queryRunner.Version >= 90000:
+		if queryRunner.stopBackupNoWait {
+			return "", errors.New("disabling stop-backup archive wait requires PostgreSQL 9.6 or newer")
+		}
 		return "SELECT (pg_catalog.pg_xlogfile_name_offset(lsn)).file_name," +
 			" lpad((pg_catalog.pg_xlogfile_name_offset(lsn)).file_offset::text, 8, '0') AS file_offset, lsn::text " +
 			"FROM pg_catalog.pg_stop_backup() lsn", nil
@@ -157,9 +161,17 @@ func NewPgQueryRunner(ctx context.Context, conn *pgx.Conn) (*PgQueryRunner, erro
 	}
 
 	r := &PgQueryRunner{Connection: conn, stopBackupTimeout: timeout}
+	if err := r.configureStopBackupArchiveWait(); err != nil {
+		return nil, err
+	}
 
 	err = r.getVersion(ctx)
 	if err != nil {
+		return nil, err
+	}
+	// Reject unsupported archive-wait settings before starting a backup,
+	// especially an exclusive backup on older PostgreSQL versions.
+	if _, err = r.BuildStopBackup(); err != nil {
 		return nil, err
 	}
 	err = r.getSystemIdentifier(ctx)

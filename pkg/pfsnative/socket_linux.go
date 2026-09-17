@@ -55,6 +55,7 @@ type socketTransport struct {
 	io           []byte
 	connectionID uint64
 	closed       bool
+	failed       error
 }
 
 func socketPathFor(cfg Config) string {
@@ -77,6 +78,12 @@ func mountSocket(ctx context.Context, cfg Config, socketPath string) (*Client, e
 		return nil, err
 	}
 	c.socket = t
+	// Mount metadata is protected only during the handshake. Holding this
+	// lock until Close would prevent other SDK clients from mounting.
+	if c.metaLock != nil {
+		_ = c.metaLock.Close()
+		c.metaLock = nil
+	}
 	return c, nil
 }
 
@@ -220,6 +227,12 @@ func (t *socketTransport) execute(ctx context.Context, requestType int32, payloa
 	if t.closed {
 		return nil, nil, os.ErrClosed
 	}
+	if t.failed != nil {
+		return nil, nil, fmt.Errorf("PFSD connection must be remounted after an incomplete request: %w", errors.Join(os.ErrClosed, t.failed))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if bufferSize > len(t.io) || len(payload) > len(t.io) {
 		return nil, nil, fmt.Errorf("PFSD request payload is too large: %d bytes", bufferSize)
 	}
@@ -253,7 +266,11 @@ func (t *socketTransport) execute(ctx context.Context, requestType int32, payloa
 	for atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.request[socketSemOffset]))) == 0 {
 		select {
 		case <-ctx.Done():
-			return nil, nil, fmt.Errorf("wait for PFSD response: %w", ctx.Err())
+			// The daemon may still be using these mappings. Never recycle them
+			// or replay an operation whose outcome is unknown. Close releases
+			// our mappings; the daemon retains its own references until done.
+			t.failed = &RPCError{Op: "wait for response", Err: ctx.Err(), Ambiguous: true}
+			return nil, nil, t.failed
 		case <-time.After(50 * time.Microsecond):
 		}
 	}
@@ -271,10 +288,23 @@ func enqueue(ctx context.Context, q, value []byte) error {
 	if capacity == 0 || capacity > uint64((len(q)-queueSlotsOffset)/queueSlotSize) {
 		return fmt.Errorf("invalid PFSD queue capacity %d", capacity)
 	}
-	head := atomic.AddUint64((*uint64)(unsafe.Pointer(&q[queueHeadOffset])), 1) - 1
-	slot := q[queueSlotsOffset+int(head%capacity)*queueSlotSize:]
-	want := (head / capacity) * 2
-	for atomic.LoadUint64((*uint64)(unsafe.Pointer(&slot[queueSlotTurnOffset]))) != want {
+	// Reserve only an available slot (the protocol's try_emplace algorithm).
+	// Incrementing head before waiting would leave a permanent hole if the
+	// context expired, blocking unrelated clients of this shared queue too.
+	var slot []byte
+	var want uint64
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("wait for PFSD queue slot: %w", err)
+		}
+		headPtr := (*uint64)(unsafe.Pointer(&q[queueHeadOffset]))
+		head := atomic.LoadUint64(headPtr)
+		slot = q[queueSlotsOffset+int(head%capacity)*queueSlotSize:]
+		want = (head / capacity) * 2
+		if atomic.LoadUint64((*uint64)(unsafe.Pointer(&slot[queueSlotTurnOffset]))) == want &&
+			atomic.CompareAndSwapUint64(headPtr, head, head+1) {
+			break
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("wait for PFSD queue slot: %w", ctx.Err())

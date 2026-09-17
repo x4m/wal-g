@@ -256,6 +256,11 @@ func (c *Client) call(ctx context.Context, requestType int32, payload []byte) ([
 }
 
 func (c *Client) execute(ctx context.Context, requestType int32, payload []byte, bufferSize int, fill func([]byte)) ([]byte, []byte, error) {
+	if c.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+	}
 	c.opMu.RLock()
 	defer c.opMu.RUnlock()
 	c.mu.Lock()
