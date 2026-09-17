@@ -1,0 +1,55 @@
+Subject: [PATCH] Use the VFS to mark WAL files as archived on shared storage
+
+pgarch_archiveDone() strips the storage protocol from the archive-status
+paths and passes them to the local rename() syscall. When pg_wal resides
+on PFS, the .ready file belongs to shared storage, not the local
+filesystem. The rename therefore fails with ENOENT even after the archive
+command has successfully uploaded the WAL file.
+
+Leaving .ready in place causes repeated archive attempts and prevents the
+server from observing archive completion. In particular, pg_backup_stop()
+with wait_for_archive enabled can keep waiting until a configured timeout
+or cancellation, despite the required WAL already being in the archive.
+
+Keep the protocol-qualified paths and call polar_rename() so the existing
+VFS dispatches the operation to the appropriate storage implementation.
+Use those same paths in the error message. Preserve the existing
+non-durable rename semantics; no extra fsync is required by this change.
+
+Validated on PolarDB 17 with shared PFS storage: automatic archiving
+produced .done files, backup-stop completed with archive waiting enabled,
+and WAL-G backup/PITR tests passed with both native Go and cgo clients,
+including concurrent writes during backup.
+
+---
+--- a/src/backend/postmaster/pgarch.c
++++ b/src/backend/postmaster/pgarch.c
+@@ -833,14 +833,8 @@
+ 	char		rlogready[MAXPGPATH];
+ 	char		rlogdone[MAXPGPATH];
+ 
+-	const char *pure_rlogready;
+-	const char *pure_rlogdone;
+-
+ 	StatusFilePath(rlogready, xlog, ".ready");
+ 	StatusFilePath(rlogdone, xlog, ".done");
+-
+-	pure_rlogready = polar_path_remove_protocol(rlogready);
+-	pure_rlogdone = polar_path_remove_protocol(rlogdone);
+ 
+ 	/*
+ 	 * To avoid extra overhead, we don't durably rename the .ready file to
+@@ -849,11 +843,11 @@
+ 	 * function is called), so it should be okay if the .ready file reappears
+ 	 * after a crash.
+ 	 */
+-	if (rename(pure_rlogready, pure_rlogdone) < 0)
++	if (polar_rename(rlogready, rlogdone) < 0)
+ 		ereport(WARNING,
+ 				(errcode_for_file_access(),
+ 				 errmsg("could not rename file \"%s\" to \"%s\": %m",
+-						pure_rlogready, pure_rlogdone)));
++						rlogready, rlogdone)));
+ }
+ 
+ 
