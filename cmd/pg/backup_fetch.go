@@ -77,14 +77,18 @@ var backupFetchCmd = &cobra.Command{
 		}
 
 		var pgFetcher internal.Fetcher
-		if reverseDeltaUnpack {
+		if polarRoot, _ := conf.GetSetting(conf.PolarDBPFSDataPath); polarRoot != "" {
+			if fileMask != "" || restoreSpec != "" || partialRestoreArgs != nil || reverseDeltaUnpack || skipRedundantTars {
+				tracelog.ErrorLogger.Fatal("Streaming PolarDB restore currently requires a full backup without masks, tablespace remapping, partial restore or reverse unpack")
+			}
+			pgFetcher = postgres.GetPolarDBFetcher(args[0], polarRoot)
+		} else if reverseDeltaUnpack {
 			pgFetcher = postgres.GetFetcherNew(args[0], fileMask, restoreSpec, skipRedundantTars, extractProv)
 		} else {
 			pgFetcher = postgres.GetFetcherOld(args[0], fileMask, restoreSpec, extractProv)
 		}
 
 		internal.HandleBackupFetch(cmd.Context(), rootFolder, targetBackupSelector, pgFetcher)
-		tracelog.ErrorLogger.FatalOnError(postgres.RestorePolarDBSharedData(cmd.Context(), args[0]))
 	},
 }
 

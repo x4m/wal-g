@@ -86,9 +86,11 @@ archive_command = 'env WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/shared_data WALG_PF
 ```
 
 For restore, choose a new, empty shared-data root and run the normal
-`backup-fetch`. WAL-G leaves compute-local files in the destination directory,
-copies the extracted `polar_shared_data` subtree to PFS, writes
-`global/pg_control` last, and removes the local staging subtree after success:
+`backup-fetch`. WAL-G streams shared-file contents from the decompressed tar
+archives directly through PFSD. Only compute-local files are written to the
+destination directory; no `polar_shared_data` tree is unpacked on local disk.
+Both native Go and cgo use this path. `WALG_DOWNLOAD_CONCURRENCY` controls
+archive extraction concurrency; memory buffers are bounded per worker.
 
 ```console
 export WALG_POLARDB_PFS_DATA_PATH=/vdb/polar/restored_shared_data
@@ -100,6 +102,30 @@ wal-g-pg-polardb backup-fetch /var/lib/polardb/restored LATEST
 
 The PFS destination must not exist or must be empty. This prevents an
 incomplete restore from being mixed with an older cluster.
+
+The destination is mounted and checked before any tar extraction, so a mount
+configuration error no longer leaves a full local shared-data copy behind.
+Files are written under temporary names on PFS and renamed after successful
+write/close. An exclusive `.wal-g-restore` directory claims the destination
+against another restore. The 8-KiB shared `global/pg_control` is held in memory
+and published only after all archives have been extracted successfully.
+This is not an atomic replacement of an existing cluster and does not add
+durability guarantees beyond the installed PFSD implementation.
+
+On failure, local node files and incomplete PFS contents are retained for
+diagnosis; automatic rollback or resume is not implemented. Use fresh empty
+local and PFS destinations for another attempt. Never start a node from a
+failed restore or remove an active node's files to retry.
+
+Streaming restore currently supports full direct backups only. Incremental
+backups, tablespaces, link/special-file archive entries, `--mask`,
+`--restore-only`, `--restore-spec`, reverse unpack and redundant-tar skipping
+are rejected rather than falling back to local staging. Normal PostgreSQL
+restore without `WALG_POLARDB_PFS_DATA_PATH` is unchanged. No archive-format
+change is needed for existing full direct backups.
+
+Native Go and cgo restore/PITR checks are recorded in
+[the streaming restore validation](POLARDB_STREAMING_RESTORE_VALIDATION.md).
 
 During archive recovery, `wal-fetch` maps the basename of PostgreSQL's `%p`
 destination to `$WALG_POLARDB_PFS_DATA_PATH/pg_wal/`. It downloads and

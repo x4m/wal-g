@@ -13,8 +13,8 @@ func openPolarDBDirectSource(context.Context, string) (polarDBDirectSource, erro
 	return nil, fmt.Errorf("%s requires a Linux WAL-G build with CGO and -tags pfs, or linux/amd64 with -tags pfsnative", PolarDBDirectDataPathEnv)
 }
 
-func restorePolarDBSharedDataPlatform(context.Context, string, string) error {
-	return fmt.Errorf("%s restore requires a Linux WAL-G build with CGO and -tags pfs", PolarDBDirectDataPathEnv)
+func openPolarDBRestoreFS(context.Context, string) (polarDBRestoreFS, error) {
+	return nil, fmt.Errorf("%s restore requires a Linux WAL-G build with CGO and -tags pfs, or linux/amd64 with -tags pfsnative", PolarDBDirectDataPathEnv)
 }
 
 func handlePolarDBWALFetch(context.Context, internal.StorageFolderReader, string, string) (bool, error) {

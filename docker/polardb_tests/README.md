@@ -21,7 +21,7 @@ executable hooks in `POLAR_E2E_HOOKS`:
 | `wait_backup_ready` | mode | Wait until the backup's stop-LSN WAL is present in the repository. |
 | `reset_restore` | mode, fetched directory | Empty the mode's disposable local node and dedicated PFS restore root. |
 | `restore_pfs_data_path` | mode | Print the dedicated `/<pbd>/<path>` used by direct `backup-fetch`. |
-| `prepare_restore` | mode, fetched directory | Install local node files and create `recovery.signal`; direct shared data has already been copied to PFS by WAL-G. |
+| `prepare_restore` | mode, fetched directory | Install local node files and create `recovery.signal`; direct shared data has already been streamed to PFS by WAL-G. |
 | `start_restore` | mode | Start the node, complete recovery, promote it and wait for read-write SQL readiness. |
 | `stop_restore` | mode | Stop that node; it should be safe when already stopped. |
 | `digest` | mode, SQL | Run SQL and print only its unaligned scalar result. |
@@ -100,7 +100,9 @@ WAL manually. In addition to the existing hooks:
 The runner takes two backups with little WAL generation, writes during the
 second backup, and commits another change after each backup stops. It restores
 both by name to separate named recovery targets and compares complete data
-digests and a rollback marker. It also verifies that every object of the first
+digests and a rollback marker. During fetch it watches for a local
+`polar_shared_data` staging tree and requires the streaming-restore completion
+message. It also verifies that every object of the first
 backup remains unchanged and that a competing SQL backup lock causes a safe
 failure. Failed backups/restore directories are retained for diagnosis; use
 fresh disposable paths for another run. Run separately with native and cgo

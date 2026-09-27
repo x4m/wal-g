@@ -21,6 +21,10 @@ writer_stop="$POLAR_E2E_RESULTS_DIR/writer.stop"
 hook() { "$POLAR_E2E_HOOKS/$1" "${@:2}"; }
 cleanup() {
   touch "$writer_stop"
+  if [[ -n ${fetcher:-} ]]; then
+    kill "$fetcher" 2>/dev/null || true
+    wait "$fetcher" || true
+  fi
   if [[ -n ${writer:-} ]]; then wait "$writer" || true; fi
   hook stop_restore archive_1 || true
   hook stop_restore archive_2 || true
@@ -115,7 +119,22 @@ for round in 1 2; do
   hook reset_restore "$mode" "$restore_dir"
   root=$(hook restore_pfs_data_path "$mode")
   [[ $root == /*/* && $root != "$POLAR_SOURCE_PFS_DATA_PATH" ]]
-  WALG_POLARDB_PFS_DATA_PATH="$root" "$WALG_BIN" backup-fetch "$restore_dir" "${names[round-1]}" >"$POLAR_E2E_RESULTS_DIR/fetch-$round.log" 2>&1
+  WALG_POLARDB_PFS_DATA_PATH="$root" "$WALG_BIN" backup-fetch "$restore_dir" "${names[round-1]}" >"$POLAR_E2E_RESULTS_DIR/fetch-$round.log" 2>&1 &
+  fetcher=$!
+  staged=false
+  # Observe throughout extraction: checking only after success would miss
+  # the old implementation, which deleted its local staging tree at the end.
+  while kill -0 "$fetcher" 2>/dev/null; do
+    if [[ -e "$restore_dir/polar_shared_data" ]]; then staged=true; fi
+    sleep .1
+  done
+  wait "$fetcher"
+  fetcher=
+  [[ $staged == false && ! -e "$restore_dir/polar_shared_data" ]] || {
+    echo 'backup-fetch staged shared data on local disk' >&2
+    exit 1
+  }
+  grep -q 'restored directly through PFSD without local shared-data staging' "$POLAR_E2E_RESULTS_DIR/fetch-$round.log"
   # prepare_restore MUST configure recovery_target_name and target_action=promote.
   hook prepare_restore "$mode" "$restore_dir"
   hook start_restore "$mode"

@@ -32,13 +32,3 @@ func polarDBDirectDataPath() string {
 func polarDBWALDestination(root, walFileName string) string {
 	return path.Join("/"+strings.TrimLeft(root, "/"), "pg_wal", path.Base(walFileName))
 }
-
-// RestorePolarDBSharedData moves the shared subtree extracted by backup-fetch
-// to PFS when direct PolarDB mode is enabled.
-func RestorePolarDBSharedData(ctx context.Context, pgData string) error {
-	root := polarDBDirectDataPath()
-	if root == "" {
-		return nil
-	}
-	return restorePolarDBSharedDataPlatform(ctx, pgData, root)
-}
