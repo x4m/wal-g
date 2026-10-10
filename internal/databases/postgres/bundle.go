@@ -280,13 +280,20 @@ func (bundle *Bundle) addToBundleWithOpener(
 		// For details see
 		//nolint:lll    // https://www.postgresql.org/message-id/flat/F0627DEB-7D0D-429B-97A9-D321450365B4%40yandex-team.ru#F0627DEB-7D0D-429B-97A9-D321450365B4@yandex-team.ru
 
-		if (wasInBase || bundle.forceIncremental) && (time.Equal(baseFile.MTime)) {
+		// Keep the PostgreSQL mtime fast path for local files. PFS can leave
+		// mtime unchanged on in-place writes, so shared files must be read.
+		trustMtime := polarDBDirectDataPath() == "" || opener == nil
+		if trustMtime && (wasInBase || bundle.forceIncremental) && (time.Equal(baseFile.MTime)) {
 			// File was not changed since previous backup
 			tracelog.DebugLogger.Println("Skipped due to unchanged modification time: " + path)
 			bundle.TarBallComposer.SkipFile(fileInfoHeader, info)
 			return nil
 		}
 		isIncremented := bundle.isIncremented(path, wasInBase, info)
+		if polarDBDirectDataPath() != "" {
+			// Changed local compute files and unsupported shared forks are copied whole.
+			isIncremented = isIncremented && opener != nil && polarDeltaPageFile(fileInfoHeader.Name, info.Size())
+		}
 		composeInfo := internal.NewComposeFileInfo(path, info, wasInBase, isIncremented, fileInfoHeader)
 		composeInfo.Open = opener
 		bundle.TarBallComposer.AddFile(composeInfo)

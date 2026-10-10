@@ -13,9 +13,16 @@ for required in preflight digest archive_done reset_restore restore_pfs_data_pat
 done
 mkdir -p "$POLAR_E2E_RESULTS_DIR" "$POLAR_E2E_WORK_DIR" "$WALG_FILE_PREFIX"
 export WALG_DELTA_MAX_STEPS=0
+rounds=2
+if [[ ${POLAR_E2E_DELTA:-false} == true ]]; then
+  export WALG_DELTA_MAX_STEPS=5 WALG_DELTA_ORIGIN=LATEST
+  export WALG_USE_WAL_DELTA=false WALG_FORCE_WAL_DELTA=false
+  rounds=3
+fi
 export WALG_STOP_BACKUP_WAIT_FOR_ARCHIVE=true
 backup_timeout=${POLAR_E2E_BACKUP_TIMEOUT:-300}
 archive_timeout=${POLAR_E2E_ARCHIVE_TIMEOUT:-300}
+recovery_timeout=${POLAR_E2E_RECOVERY_TIMEOUT:-300}
 writer_stop="$POLAR_E2E_RESULTS_DIR/writer.stop"
 [[ ! -e $writer_stop ]] || { echo 'use a fresh results directory' >&2; exit 2; }
 hook() { "$POLAR_E2E_HOOKS/$1" "${@:2}"; }
@@ -28,6 +35,7 @@ cleanup() {
   if [[ -n ${writer:-} ]]; then wait "$writer" || true; fi
   hook stop_restore archive_1 || true
   hook stop_restore archive_2 || true
+  if [[ $rounds == 3 ]]; then hook stop_restore archive_3 || true; fi
 }
 trap cleanup EXIT
 sql() { hook digest source "$1"; }
@@ -40,10 +48,21 @@ hook preflight
 [[ $("$WALG_BIN" backup-list --json | jq length) == 0 ]]
 sql 'CREATE TABLE walg_archive_e2e(i int PRIMARY KEY, payload text NOT NULL); INSERT INTO walg_archive_e2e SELECT i, md5(i::text) FROM generate_series(1,120000) i' >/dev/null
 sql "BEGIN; INSERT INTO walg_archive_e2e VALUES (120001, 'rolled back'); ROLLBACK" >/dev/null
+if [[ $rounds == 3 ]]; then
+  [[ $(sql 'SHOW full_page_writes') == on ]]
+  sql 'CREATE TABLE walg_delta_tail AS SELECT i, md5(i::text) AS payload FROM generate_series(1,60000) i; CREATE TABLE walg_delta_recreated AS SELECT 1 AS n; CREATE TABLE walg_delta_removed AS SELECT 1 AS n' >/dev/null
+  digest_sql="SELECT ($digest_sql) || ':' || (SELECT count(*) || ':' || md5(string_agg(payload, ',' ORDER BY i)) FROM walg_delta_tail) || ':' || (SELECT sum(n) FROM walg_delta_recreated) || ':' || (to_regclass('walg_delta_removed') IS NULL)"
+fi
 
 names=()
 digests=()
-for round in 1 2; do
+for ((round=1; round<=rounds; round++)); do
+  if [[ $rounds == 3 && $round == 2 ]]; then
+    sql 'DROP TABLE walg_delta_removed; DROP TABLE walg_delta_recreated; CREATE TABLE walg_delta_recreated AS SELECT 2 AS n; DELETE FROM walg_delta_tail WHERE i>10000' >/dev/null
+    sql 'VACUUM walg_delta_tail' >/dev/null
+  elif [[ $rounds == 3 && $round == 3 ]]; then
+    sql 'INSERT INTO walg_delta_tail SELECT i, md5(i::text) FROM generate_series(10001,80000) i; TRUNCATE walg_delta_recreated; INSERT INTO walg_delta_recreated VALUES (3)' >/dev/null
+  fi
   if [[ $round == 2 ]]; then
     # A committed writer remains active while the hot backup is running.
     (
@@ -64,9 +83,19 @@ for round in 1 2; do
   fi
   "$WALG_BIN" backup-list --json >"$POLAR_E2E_RESULTS_DIR/backups-$round.json"
   [[ $(jq length "$POLAR_E2E_RESULTS_DIR/backups-$round.json") == "$round" ]]
-  name=$(jq -r '.[].backup_name' "$POLAR_E2E_RESULTS_DIR/backups-$round.json" | sort)
-  if [[ $round == 2 ]]; then name=$(printf '%s\n' "$name" | grep -vx "${names[0]}"); fi
+  name=
+  while IFS= read -r candidate; do
+    if [[ " ${names[*]-} " != *" $candidate "* ]]; then
+      [[ -z $name ]] || { echo 'multiple new backups' >&2; exit 1; }
+      name=$candidate
+    fi
+  done < <(jq -r '.[].backup_name' "$POLAR_E2E_RESULTS_DIR/backups-$round.json")
   [[ $name == base_* && $name != *$'\n'* ]]
+  if [[ $rounds == 3 && $round -gt 1 ]]; then
+    [[ $name == *_D_* ]]
+    jq -e '.PolarDBFullScanDelta == true' "$WALG_FILE_PREFIX/basebackups_005/${name}_backup_stop_sentinel.json" >/dev/null
+    jq -e '[.Files[] | select(.IsIncremented == true)] | length > 0' "$WALG_FILE_PREFIX/basebackups_005/$name/files_metadata.json" >/dev/null
+  fi
   names+=("$name")
   # This change is after backup_stop: the target state necessarily needs WAL.
   sql "UPDATE walg_archive_e2e SET payload='after-backup-$round' WHERE i=120000" >/dev/null
@@ -109,9 +138,9 @@ if backup >"$POLAR_E2E_RESULTS_DIR/concurrent.log" 2>&1; then
 fi
 grep -q 'cannot acquire PolarDB backup lock' "$POLAR_E2E_RESULTS_DIR/concurrent.log"
 wait "$locker"
-[[ $("$WALG_BIN" backup-list --json | jq length) == 2 ]]
+[[ $("$WALG_BIN" backup-list --json | jq length) == "$rounds" ]]
 
-for round in 1 2; do
+for ((round=1; round<=rounds; round++)); do
   export POLAR_E2E_TARGET_NAME="walg_archive_round_$round"
   mode="archive_$round"
   restore_dir="$POLAR_E2E_WORK_DIR/$mode"
@@ -138,11 +167,25 @@ for round in 1 2; do
   # prepare_restore MUST configure recovery_target_name and target_action=promote.
   hook prepare_restore "$mode" "$restore_dir"
   hook start_restore "$mode"
+  # pg_ctl -w can succeed as soon as hot standby accepts connections, before
+  # the requested PITR target has been replayed. Compare only after promotion.
+  recovered=false
+  for ((i=0; i<recovery_timeout; i++)); do
+    if [[ $(hook digest "$mode" 'SELECT NOT pg_is_in_recovery()') == t ]]; then
+      recovered=true
+      break
+    fi
+    sleep 1
+  done
+  [[ $recovered == true ]] || { echo "$mode did not finish PITR" >&2; exit 1; }
   actual=$(hook digest "$mode" "$digest_sql")
-  [[ $actual == "${digests[round-1]}" ]]
+  printf '%s\n' "$actual" >"$POLAR_E2E_RESULTS_DIR/restored-$round.txt"
+  [[ $actual == "${digests[round-1]}" ]] || {
+    echo "$mode restored digest differs from expected-$round.txt" >&2
+    exit 1
+  }
   [[ $(hook digest "$mode" 'SELECT count(*) FROM walg_archive_e2e WHERE i=120001') == 0 ]]
   [[ $(hook digest "$mode" 'SELECT NOT pg_is_in_recovery()') == t ]]
-  printf '%s\n' "$actual" >"$POLAR_E2E_RESULTS_DIR/restored-$round.txt"
   hook stop_restore "$mode"
 done
-echo 'Automatic archive, two independent backups, unchanged first backup, concurrent rejection and PITR passed'
+echo "Automatic archive, $rounds backups (delta=${POLAR_E2E_DELTA:-false}), unchanged first backup, concurrent rejection and PITR passed"

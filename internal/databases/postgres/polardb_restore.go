@@ -27,6 +27,7 @@ type polarDBRestoreFS interface {
 	Mkdir(context.Context, string) error
 	MkdirAll(context.Context, string) error
 	Create(context.Context, string) (io.WriteCloser, error)
+	Open(context.Context, string) (io.ReadCloser, error)
 	Rename(context.Context, string, string) error
 	Remove(context.Context, string) error
 	Close() error
@@ -46,28 +47,13 @@ func fetchPolarDBBackup(ctx context.Context, backup Backup, pgData, root string,
 	if err != nil {
 		return err
 	}
-	sentinel, _, err := backup.GetSentinelAndFilesMetadata(ctx)
+	plans, err := planPolarRestore(ctx, backup)
 	if err != nil {
 		return err
-	}
-	if sentinel.IncrementFrom != nil || sentinel.IncrementFromLSN != nil || sentinel.IncrementFullName != nil ||
-		sentinel.IncrementCount != nil || sentinel.IncrementFromChkpNum != nil {
-		return fmt.Errorf("streaming PolarDB restore supports full backups only")
-	}
-	if sentinel.TablespaceSpec != nil && !sentinel.TablespaceSpec.empty() {
-		return fmt.Errorf("streaming PolarDB restore does not yet support tablespaces")
 	}
 	pgData = utility.ResolveSymlink(pgData)
-	if err = checkDBDirectoryForUnwrap(pgData, sentinel, *backup.FilesMetadataDto); err != nil {
+	if err = checkDBDirectoryForUnwrap(pgData, BackupSentinelDto{}, FilesMetadataDto{}); err != nil {
 		return err
-	}
-	// Discover archives and reject unsupported backups before mounting/writing.
-	concurrent, sequential, err := (FilesToExtractProviderImpl{}).Get(ctx, backup, nil, false)
-	if err != nil {
-		return err
-	}
-	if len(sequential) == 0 {
-		return newPgControlNotFoundError()
 	}
 	fs, err := open(ctx, root)
 	if err != nil {
@@ -82,13 +68,28 @@ func fetchPolarDBBackup(ctx context.Context, backup Backup, pgData, root string,
 	if err = fs.Mkdir(ctx, path.Join(root, polarRestoreTemporaryDir)); err != nil {
 		return fmt.Errorf("create PolarDB restore temporary directory: %w", err)
 	}
-	if len(concurrent) > 0 {
-		if err = internal.ExtractAll(ctx, interpreter, concurrent); err != nil {
+	for i := len(plans) - 1; i >= 0; i-- {
+		// Each layer has its own lifecycle: late extraction callbacks must not
+		// observe another layer's metadata. Only the newest layer has control.
+		layer := newPolarDBRestoreInterpreter(ctx, fs, root, pgData)
+		layer.plan = &plans[i]
+		layer.latest = i == 0
+		if len(plans[i].concurrent) > 0 {
+			err = internal.ExtractAll(ctx, layer, plans[i].concurrent)
+		}
+		if err == nil {
+			err = internal.ExtractAll(ctx, layer, plans[i].sequential)
+		}
+		layer.stop()
+		if err != nil {
 			return err
 		}
-	}
-	if err = internal.ExtractAll(ctx, interpreter, sequential); err != nil {
-		return err
+		if err = layer.checkRequiredFiles(); err != nil {
+			return err
+		}
+		if i == 0 {
+			interpreter.control = layer.control
+		}
 	}
 	interpreter.stop()
 	if err = interpreter.finish(); err != nil {
@@ -117,6 +118,9 @@ type polarDBRestoreInterpreter struct {
 	control  []byte
 	active   sync.WaitGroup
 	stopped  bool
+	plan     *polarRestorePlan
+	latest   bool
+	seen     sync.Map
 }
 
 func newPolarDBRestoreInterpreter(ctx context.Context, fs polarDBRestoreFS, root, pgData string) *polarDBRestoreInterpreter {
@@ -138,7 +142,7 @@ func polarRestoreArchivePath(name string) (string, error) {
 	return name, nil
 }
 
-func (p *polarDBRestoreInterpreter) Interpret(reader io.Reader, header *tar.Header) error {
+func (p *polarDBRestoreInterpreter) Interpret(reader io.Reader, header *tar.Header) (err error) {
 	p.mu.Lock()
 	if p.stopped {
 		p.mu.Unlock()
@@ -163,7 +167,34 @@ func (p *polarDBRestoreInterpreter) Interpret(reader io.Reader, header *tar.Head
 	if header.Size < 0 {
 		return fmt.Errorf("negative size for %q", header.Name)
 	}
+	var increment bool
+	if p.plan != nil {
+		archiveName := name
+		defer func() {
+			if err == nil {
+				p.seen.Store(archiveName, true)
+			}
+		}()
+		if header.Typeflag == tar.TypeDir {
+			if !p.latest {
+				return nil
+			}
+		} else {
+			desc, wanted := p.plan.files[name]
+			utilityFile := name == "backup_label" || name == "tablespace_map" || name == "polar_shared_data/global/pg_control"
+			if utilityFile && !p.latest {
+				return nil
+			}
+			if p.plan.files != nil && !(utilityFile && p.latest) && (!wanted || desc.IsSkipped) {
+				return nil
+			}
+			increment = wanted && desc.IsIncremented
+		}
+	}
 	if name != "polar_shared_data" && !strings.HasPrefix(name, "polar_shared_data/") {
+		if increment {
+			return fmt.Errorf("unsupported local PolarDB increment %q", name)
+		}
 		// No links are accepted, and the local destination was checked empty.
 		copyHeader := *header
 		copyHeader.Name = name
@@ -181,6 +212,9 @@ func (p *polarDBRestoreInterpreter) Interpret(reader io.Reader, header *tar.Head
 		return fmt.Errorf("shared-data root is not a directory")
 	}
 	if name == "global/pg_control" {
+		if increment {
+			return fmt.Errorf("pg_control cannot be incremental")
+		}
 		if header.Size != pgControlSize {
 			return fmt.Errorf("invalid PolarDB pg_control size %d", header.Size)
 		}
@@ -196,6 +230,9 @@ func (p *polarDBRestoreInterpreter) Interpret(reader io.Reader, header *tar.Head
 		p.control = data
 		return nil
 	}
+	if increment {
+		return p.writeIncrement(name, reader, header.Size)
+	}
 	return p.writeFile(name, reader, header.Size)
 }
 
@@ -208,7 +245,7 @@ func (p *polarDBRestoreInterpreter) stop() {
 
 // ExtractAll may retry a complete tar after a partial download. Each attempt
 // writes a new temporary file and replaces the destination only after close.
-func (p *polarDBRestoreInterpreter) writeFile(name string, reader io.Reader, size int64) error {
+func (p *polarDBRestoreInterpreter) writeFile(name string, reader io.Reader, size int64, beforePublish ...func() error) error {
 	destination := path.Join(p.root, name)
 	if err := p.fs.MkdirAll(p.ctx, path.Dir(destination)); err != nil {
 		return err
@@ -226,6 +263,13 @@ func (p *polarDBRestoreInterpreter) writeFile(name string, reader io.Reader, siz
 	}
 	if err = errors.Join(copyErr, closeErr); err == nil {
 		err = p.ctx.Err()
+	}
+	if err == nil {
+		for _, closeSource := range beforePublish {
+			if err = closeSource(); err != nil {
+				break
+			}
+		}
 	}
 	if err == nil {
 		err = p.fs.Rename(p.ctx, temporary, destination)

@@ -274,6 +274,23 @@ func (bh *BackupHandler) startBackup(ctx context.Context) error {
 
 func (bh *BackupHandler) handleDeltaBackup(ctx context.Context, folder storage.Folder) error {
 	if len(bh.prevBackupInfo.name) > 0 && bh.prevBackupInfo.sentinelDto.BackupStartLSN != nil {
+		if polarDBDirectDataPath() != "" {
+			if err := validatePolarDeltaBase(bh.prevBackupInfo.name, bh.prevBackupInfo.sentinelDto,
+				bh.CurBackupInfo.Name, bh.PgInfo.PgVersion, bh.PgInfo.systemIdentifier, bh.CurBackupInfo.startLSN); err != nil {
+				return err
+			}
+			if viper.GetBool(conf.UseWalDeltaSetting) || viper.GetBool(conf.ForceWalDetal) {
+				return fmt.Errorf("PolarDB delta uses full page scanning; disable WALG_USE_WAL_DELTA and WALG_FORCE_WAL_DELTA")
+			}
+			fpw, err := bh.Workers.QueryRunner.GetFullPageWrites(ctx)
+			if err != nil {
+				return err
+			}
+			if fpw != "on" {
+				return fmt.Errorf("PolarDB full-scan delta currently requires full_page_writes=on")
+			}
+			tracelog.InfoLogger.Println("PolarDB delta: scanning shared relation pages without WAL maps or mtime skipping")
+		}
 		tracelog.InfoLogger.Println("Delta backup enabled")
 		tracelog.DebugLogger.Printf("Previous backup: %s\nBackup start LSN: %s", bh.prevBackupInfo.name,
 			bh.prevBackupInfo.sentinelDto.BackupStartLSN)
@@ -286,8 +303,12 @@ func (bh *BackupHandler) handleDeltaBackup(ctx context.Context, folder storage.F
 			tracelog.ErrorLogger.FatalOnError(newBackupFromOtherBD())
 		}
 
-		useWalDelta, _, err := configureWalDeltaUsage()
-		tracelog.ErrorLogger.FatalOnError(err)
+		useWalDelta := false
+		if polarDBDirectDataPath() == "" {
+			var err error
+			useWalDelta, _, err = configureWalDeltaUsage()
+			tracelog.ErrorLogger.FatalOnError(err)
+		}
 
 		if useWalDelta {
 			ForceWalDetal, _ := conf.GetBoolSettingDefault(conf.ForceWalDetal, false)
@@ -337,6 +358,9 @@ func (bh *BackupHandler) SetComposerInitFunc(initFunc func(ctx context.Context, 
 }
 
 func configureTarBallComposer(ctx context.Context, bh *BackupHandler, tarBallComposerType TarBallComposerType) error {
+	if polarDBDirectDataPath() != "" && bh.Workers.Bundle.IncrementFromLsn != nil && tarBallComposerType != RegularComposer {
+		return fmt.Errorf("PolarDB full-scan delta requires the regular tar composer; disable rating, copy and database composers")
+	}
 	maker, err := NewTarBallComposerMaker(ctx, tarBallComposerType, bh.Workers.QueryRunner,
 		bh.Arguments.Uploader, bh.CurBackupInfo.Name,
 		NewTarBallFilePackerOptions(bh.Arguments.verifyPageChecksums, bh.Arguments.storeAllCorruptBlocks),

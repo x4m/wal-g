@@ -117,12 +117,67 @@ diagnosis; automatic rollback or resume is not implemented. Use fresh empty
 local and PFS destinations for another attempt. Never start a node from a
 failed restore or remove an active node's files to retry.
 
-Streaming restore currently supports full direct backups only. Incremental
-backups, tablespaces, link/special-file archive entries, `--mask`,
+Streaming restore supports full direct backups and the full-scan deltas
+described below. Tablespaces, link/special-file archive entries, `--mask`,
 `--restore-only`, `--restore-spec`, reverse unpack and redundant-tar skipping
 are rejected rather than falling back to local staging. Normal PostgreSQL
 restore without `WALG_POLARDB_PFS_DATA_PATH` is unchanged. No archive-format
 change is needed for existing full direct backups.
+
+## Full-scan delta backups
+
+Use the ordinary PostgreSQL WAL-G interface:
+
+```console
+export WALG_DELTA_MAX_STEPS=5
+export WALG_DELTA_ORIGIN=LATEST  # or LATEST_FULL
+wal-g-pg-polardb backup-push "$PGDATA" --full
+# After changes, without --full:
+wal-g-pg-polardb backup-push "$PGDATA"
+# Set WALG_POLARDB_PFS_DATA_PATH to a fresh restore root before fetching:
+wal-g-pg-polardb backup-fetch /var/lib/polardb/restored LATEST
+```
+
+Base selection, `--delta-from-name`, chain limits and `_D_` names use the normal
+PostgreSQL machinery. Numeric main-fork relation segments in shared `base/`
+are scanned using the parent's **backup-start LSN**, including zero/new pages.
+Files not present in the parent, unsupported forks, global files, SLRUs and
+changed compute-local files are copied whole. Compute-local files retain the
+ordinary PostgreSQL mtime-based skip optimization. Shared files are never
+skipped merely because their mtime matches: PFS may leave it unchanged on
+in-place writes without size or allocation changes. The standard `wi1`
+page-delta format records the new file
+length and selected blocks. Invalid page headers fall back to a whole-file
+copy through PFSD; actual read/transport errors fail the backup.
+
+This reduces stored/uploaded bytes, not source reads. Selection performs one
+bounded sequential pass; emitting selected pages uses a second sequential
+pass up to the last selected page. No seek extension or local data staging is
+needed in either SDK. Growth after stat is excluded and concurrent EOF is
+zero-padded, as in direct full backups; WAL recovery remains mandatory.
+
+The first implementation requires `full_page_writes=on`, the regular tar
+composer, file metadata, matching database identity/server version and the
+same timeline. After promotion take a new `--full` backup. Both
+`WALG_USE_WAL_DELTA` and `WALG_FORCE_WAL_DELTA` must be false; WAL summaries
+and ptrack are not used. The sentinel marks these deltas with
+`PolarDBFullScanDelta`; older experimental/unmarked direct deltas are rejected.
+
+Restore validates the chain before mounting and assembles only files needed
+by the requested backup. Each delta merges inherited and changed pages into
+a temporary PFS file and atomically replaces that file after successful close.
+File shrinkage is respected, dropped files are not resurrected, and only the
+newest backup's control file is published, after the whole chain succeeds.
+Restore still needs fresh destinations and sufficient PFS space for both the
+inherited file and its temporary replacement. Local staging is never used.
+
+Local tests cover page selection, chain reconstruction, growth/truncation,
+retry, malformed deltas and missing parents. Native Go and cgo passed real
+full/delta/delta backup, PITR and heap/index checks, recorded with their
+environment prerequisites in [the delta validation](POLARDB_DELTA_VALIDATION.md).
+Repeat the real-server test with `POLAR_E2E_DELTA=true` for your environment
+(see `docker/polardb_tests/README.md`); unit tests alone do not establish
+hot-backup/PITR correctness.
 
 Native Go and cgo restore/PITR checks are recorded in
 [the streaming restore validation](POLARDB_STREAMING_RESTORE_VALIDATION.md).

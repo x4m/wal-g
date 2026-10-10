@@ -134,6 +134,21 @@ func (p *TarBallFilePackerImpl) PackFileIntoTar(ctx context.Context, cfi *intern
 func (p *TarBallFilePackerImpl) createFileReadCloser(ctx context.Context, cfi *internal.ComposeFileInfo) (io.ReadCloser, error) {
 	var fileReadCloser io.ReadCloser
 	var err error
+	if cfi.IsIncremented && cfi.Open != nil {
+		if p.incrementFromLsn == nil || p.deltaMap != nil {
+			return nil, errors.New("direct PolarDB delta requires a base LSN and full page scanning")
+		}
+		fileReadCloser, cfi.Header.Size, err = readPolarIncrement(ctx, cfi.Open, cfi.FileInfo.Size(), *p.incrementFromLsn)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, internal.NewFileNotExistError(cfi.Path)
+		}
+		if _, invalid := err.(pg_errors.InvalidBlockError); !invalid {
+			return fileReadCloser, err
+		}
+		// Reopen through the same non-POSIX source, never the archive path.
+		cfi.IsIncremented = false
+		cfi.Header.Size = cfi.FileInfo.Size()
+	}
 	if cfi.IsIncremented {
 		var bitmap *roaring.Bitmap
 		bitmap, err = p.getDeltaBitmapFor(cfi.Path)

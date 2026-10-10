@@ -51,6 +51,9 @@ func (f *testPolarRestoreFS) Create(_ context.Context, name string) (io.WriteClo
 	}
 	return &testPolarRestoreFile{File: file, closeErr: f.closeFileErr}, nil
 }
+func (f *testPolarRestoreFS) Open(_ context.Context, name string) (io.ReadCloser, error) {
+	return os.Open(f.disk(name))
+}
 
 type testPolarRestoreFile struct {
 	*os.File

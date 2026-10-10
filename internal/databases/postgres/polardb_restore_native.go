@@ -48,6 +48,9 @@ func (f *nativePolarDBRestoreFS) Create(ctx context.Context, name string) (io.Wr
 	}
 	return &nativePolarRestoreWriter{ctx: ctx, File: file}, nil
 }
+func (f *nativePolarDBRestoreFS) Open(ctx context.Context, name string) (io.ReadCloser, error) {
+	return f.client.OpenFile(ctx, name, os.O_RDONLY, 0)
+}
 func (f *nativePolarDBRestoreFS) Rename(ctx context.Context, from, to string) error {
 	return f.client.Rename(ctx, from, to)
 }

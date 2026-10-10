@@ -109,9 +109,27 @@ fresh disposable paths for another run. Run separately with native and cgo
 binaries. This is a real-server test; the original runner self-test does not
 validate this additional archive lifecycle.
 
-`POLAR_E2E_BACKUP_TIMEOUT` and `POLAR_E2E_ARCHIVE_TIMEOUT` default to 300
-seconds. Use fresh results/work directories; writer commit timestamps are
+`POLAR_E2E_BACKUP_TIMEOUT`, `POLAR_E2E_ARCHIVE_TIMEOUT` and
+`POLAR_E2E_RECOVERY_TIMEOUT` default to 300 seconds. After startup the runner
+waits for PITR promotion, not just hot-standby readiness, before comparing
+digests. Use fresh results/work directories; writer commit timestamps are
 retained in `writer-commits.txt` to check overlap with the second backup.
+
+### Full-scan delta regression
+
+On the replacement test host (`bat`), use dedicated disposable source/restore
+roots and host-specific hooks; do not use the retired `pfs-test` VM.
+Set `POLAR_E2E_DELTA=true` when running `scripts/run_archive_e2e.sh` to take
+`full -> delta -> delta`, restore all three to their individual PITR targets,
+and require that delta metadata actually contains incremental files. This mode
+requires `full_page_writes=on` and hooks supporting `archive_3` as well as
+`archive_1` and `archive_2`. It exercises writes during the middle backup,
+relation deletion/recreation, vacuum truncation and subsequent growth. It
+disables WAL_DELTA and uses `WALG_DELTA_ORIGIN=LATEST`. Run separately with
+native and cgo builds. A successful runner self-test is not a real PFSD E2E.
+The October 10 native/cgo chain, PITR and consistency-check results, including
+test-environment prerequisites, are recorded in
+[`docs/POLARDB_DELTA_VALIDATION.md`](../../docs/POLARDB_DELTA_VALIDATION.md).
 
 ### Server-side archive-status fix
 

@@ -56,6 +56,12 @@ func (f *cgoPolarDBRestoreFS) Create(ctx context.Context, name string) (io.Write
 	}
 	return f.client.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 }
+func (f *cgoPolarDBRestoreFS) Open(ctx context.Context, name string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.client.OpenFile(name, os.O_RDONLY, 0)
+}
 func (f *cgoPolarDBRestoreFS) Rename(ctx context.Context, from, to string) error {
 	if err := ctx.Err(); err != nil {
 		return err

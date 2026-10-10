@@ -15,11 +15,12 @@ const MetadataDatetimeFormat = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 // BackupSentinelDto describes file structure of json sentinel
 type BackupSentinelDto struct {
-	BackupStartLSN    *LSN    `json:"LSN"`
-	IncrementFromLSN  *LSN    `json:"DeltaLSN,omitempty"`
-	IncrementFrom     *string `json:"DeltaFrom,omitempty"`
-	IncrementFullName *string `json:"DeltaFullName,omitempty"`
-	IncrementCount    *int    `json:"DeltaCount,omitempty"`
+	BackupStartLSN       *LSN    `json:"LSN"`
+	IncrementFromLSN     *LSN    `json:"DeltaLSN,omitempty"`
+	IncrementFrom        *string `json:"DeltaFrom,omitempty"`
+	IncrementFullName    *string `json:"DeltaFullName,omitempty"`
+	IncrementCount       *int    `json:"DeltaCount,omitempty"`
+	PolarDBFullScanDelta bool    `json:"PolarDBFullScanDelta,omitempty"`
 
 	PgVersion        int     `json:"PgVersion"`
 	BackupFinishLSN  *LSN    `json:"FinishLSN"`
@@ -48,6 +49,7 @@ func NewBackupSentinelDto(bh *BackupHandler, tbsSpec *TablespaceSpec) BackupSent
 		IncrementFromChkpNum: bh.prevBackupInfo.sentinelDto.BackupStartChkpNum,
 	}
 	if bh.prevBackupInfo.sentinelDto.BackupStartLSN != nil {
+		sentinel.PolarDBFullScanDelta = polarDBDirectDataPath() != ""
 		sentinel.IncrementFrom = &bh.prevBackupInfo.name
 		if bh.prevBackupInfo.sentinelDto.IsIncremental() {
 			sentinel.IncrementFullName = bh.prevBackupInfo.sentinelDto.IncrementFullName
