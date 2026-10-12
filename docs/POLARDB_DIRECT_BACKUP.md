@@ -150,6 +150,14 @@ page-delta format records the new file
 length and selected blocks. Invalid page headers fall back to a whole-file
 copy through PFSD; actual read/transport errors fail the backup.
 
+Shared relation files larger than 1 GiB also participate; the ordinary
+PostgreSQL segment size is not a limit on PolarDB files. The format permits
+up to `2^32 - 1` pages per file (just under 32 TiB with 8 KiB pages), with
+additional integer-overflow checks. Block-map memory grows with the number
+of changed pages, not the complete file contents. Both backup and restore
+must use a version with large-file delta support; older experimental restore
+binaries reject increments whose restored file size exceeds 1 GiB.
+
 This reduces stored/uploaded bytes, not source reads. Selection performs one
 bounded sequential pass; emitting selected pages uses a second sequential
 pass up to the last selected page. No seek extension or local data staging is

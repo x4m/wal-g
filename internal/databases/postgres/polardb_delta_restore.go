@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"path"
 	"sync"
 
@@ -133,19 +134,28 @@ func (p *polarDBRestoreInterpreter) writeIncrement(name string, delta io.Reader,
 	}
 	size := binary.LittleEndian.Uint64(header[4:12])
 	count := binary.LittleEndian.Uint32(header[12:16])
-	if size > RelFileSizeBound || !polarDeltaPageFile("polar_shared_data/"+name, int64(size)) ||
+	if size > math.MaxInt64 || !polarDeltaPageFile("polar_shared_data/"+name, int64(size)) ||
 		uint64(count) > size/uint64(DatabasePageSize) ||
 		archiveSize != 16+int64(count)*(4+DatabasePageSize) {
 		return fmt.Errorf("invalid PolarDB delta size or block count for %q", name)
 	}
-	blocks := make([]uint32, count)
-	if err := binary.Read(delta, binary.LittleEndian, blocks); err != nil {
-		return err
-	}
-	for i, b := range blocks {
-		if uint64(b) >= size/uint64(DatabasePageSize) || (i > 0 && b <= blocks[i-1]) {
-			return fmt.Errorf("invalid PolarDB delta block list for %q", name)
+	// A large relation may have a large block map. Do not allocate from the
+	// untrusted count alone: consume and validate bounded chunks first. A
+	// truncated archive claiming billions of entries must fail without an OOM.
+	var blocks []uint32
+	var chunk [4096]uint32
+	for left := count; left > 0; {
+		n := min(left, uint32(len(chunk)))
+		if err := binary.Read(delta, binary.LittleEndian, chunk[:n]); err != nil {
+			return err
 		}
+		for _, b := range chunk[:n] {
+			if uint64(b) >= size/uint64(DatabasePageSize) || (len(blocks) > 0 && b <= blocks[len(blocks)-1]) {
+				return fmt.Errorf("invalid PolarDB delta block list for %q", name)
+			}
+			blocks = append(blocks, b)
+		}
+		left -= n
 	}
 	base, err := p.fs.Open(p.ctx, path.Join(p.root, name))
 	if err != nil {

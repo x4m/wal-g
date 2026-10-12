@@ -136,3 +136,24 @@ cross-timeline deltas, tablespace support, daemon crash durability or behavior
 on every PFSD/server version. Delta selection saves archived bytes, not the
 full source scan; restore also reads ancestor archives and rewrites inherited
 PFS files while applying each layer. Take a new full backup after promotion.
+
+## Large-file regression follow-up, 2026-10-12
+
+The initial implementation unnecessarily reused the PostgreSQL 1 GiB segment
+limit for PolarDB delta eligibility and restore. The follow-up removes it in
+both directions, preserving wi1 block-count and integer-overflow checks.
+Restore reads the block map in bounded chunks rather than preallocating from
+an untrusted count; valid maps still consume memory proportional to their
+changed-page count.
+
+New regressions reproduced the rejection before the fix. They then passed
+with a generated 5 GiB page stream: unchanged data produces a 16-byte delta,
+changes beyond 4 GiB survive restore, and truncation followed by regrowth
+reconstructs the expected bytes. A streaming filesystem test double verifies
+every restored byte without allocating/writing a full 5 GiB file; sparse-file
+tests independently check the ordinary PostgreSQL decoder's offsets and final
+length. Tests also cover scheduling large files as incremental, format limits,
+truncated huge block maps and ordering across map-read chunk boundaries.
+
+These are local regression checks, not another real-server/PFSD E2E run. The
+October 10 E2E results above predate this large-file fix.

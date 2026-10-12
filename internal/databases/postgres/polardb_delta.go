@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	pgerrors "github.com/wal-g/wal-g/internal/databases/postgres/errors"
@@ -18,7 +19,7 @@ import (
 func polarDeltaPageFile(name string, size int64) bool {
 	parts := strings.Split(strings.TrimPrefix(name, "/"), "/")
 	if len(parts) != 4 || parts[0] != "polar_shared_data" || parts[1] != "base" ||
-		size <= 0 || size > RelFileSizeBound || size%DatabasePageSize != 0 {
+		!polarDeltaFileSize(size) {
 		return false
 	}
 	for _, c := range parts[2] {
@@ -27,6 +28,18 @@ func polarDeltaPageFile(name string, size int64) bool {
 		}
 	}
 	return parts[2] != "" && pagedFilenameRegexp.MatchString(parts[3])
+}
+
+// PolarDB relations need not be split into PostgreSQL's default 1 GiB
+// segments. Bound the number of pages by wi1's uint32 changed-page count,
+// including the worst case where every page changes. Also keep the complete
+// increment (header, block numbers and pages) representable as an int64.
+func polarDeltaFileSize(size int64) bool {
+	if DatabasePageSize <= 0 || size <= 0 || size%DatabasePageSize != 0 {
+		return false
+	}
+	pages := size / DatabasePageSize
+	return pages <= math.MaxUint32 && size <= math.MaxInt64-16-4*pages
 }
 
 func validatePolarDeltaBase(parentName string, parent BackupSentinelDto, childName string,
@@ -65,7 +78,7 @@ func validatePolarDeltaBase(parentName string, parent BackupSentinelDto, childNa
 // hot full backup. Only EOF is padded, never a transport or disk error.
 func readPolarIncrement(ctx context.Context, open func(context.Context) (io.ReadCloser, error),
 	size int64, lsn LSN) (io.ReadCloser, int64, error) {
-	if size <= 0 || size > RelFileSizeBound || size%DatabasePageSize != 0 {
+	if !polarDeltaFileSize(size) {
 		return nil, 0, fmt.Errorf("invalid PolarDB incremental file size %d", size)
 	}
 	first, err := open(ctx)
