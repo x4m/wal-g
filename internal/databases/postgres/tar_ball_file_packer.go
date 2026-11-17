@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/ncw/directio"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
