@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/ncw/directio"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
@@ -197,7 +196,9 @@ func (p *TarBallFilePackerImpl) createFileReadCloser(ctx context.Context, cfi *i
 				// recovery supplies the subsequent relation changes. Only EOF
 				// is padded; transport and I/O errors must still fail backup.
 				fileReadCloser = &ioextensions.ReadCascadeCloser{
-					Reader: io.LimitReader(io.MultiReader(fileReadCloser, &ioextensions.ZeroReader{}), cfi.Header.Size),
+					Reader: bufio.NewReaderSize(
+						io.LimitReader(io.MultiReader(fileReadCloser, &ioextensions.ZeroReader{}), cfi.Header.Size),
+						polarDirectReadBufferSize),
 					Closer: fileReadCloser,
 				}
 			}

@@ -11,6 +11,12 @@ import (
 
 const PolarDBDirectDataPathEnv = conf.PolarDBPFSDataPath
 
+// polarDirectReadBufferSize bounds one non-POSIX read. It matches the
+// transport MaxIOSize shared by both PFSD SDK variants, so whole-file reads
+// into the tar writer issue 1 MiB read RPCs instead of one RPC per default
+// 32 KiB io.Copy chunk.
+const polarDirectReadBufferSize = 1 << 20
+
 type polarDBDirectSource interface {
 	AddToBundle(context.Context, *Bundle, string) error
 	Open(context.Context, string) (io.ReadCloser, error)
